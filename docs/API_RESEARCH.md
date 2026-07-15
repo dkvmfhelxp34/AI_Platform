@@ -53,8 +53,10 @@
 
 - 용도: 실시간 API 에 없는 **영문명·부이형식·센서고** 확보(툴팁/상세). 원문 [`reference/kma_lst_tables.txt`](reference/kma_lst_tables.txt).
 
-### 1-5. 월보 일통계 (미사용)
-- `getDailyBuoy`·`getDailyWaveBuoy`·`getDailyLhaws`·`getObsOpenYear` → apihub authKey 로는 **전 기간 "발간되지 않은 기간입니다"(resultCode 99)**. 실시간 모니터링엔 불필요. 필요 시 data.go.kr `apis.data.go.kr/1360000/SeaMtlyInfoService` + data.go.kr serviceKey 로 분리 접근.
+### 1-5. 일 통계 (과거 이력 — 기존 authKey로 사용 가능)
+- `getDailyBuoy`(해양기상부이)·`getDailyWaveBuoy`(파고부이)·`getDailyLhaws`(등표) → 기존 authKey로 **정상(resultCode 00)**. `station`+`year`+`month` 로 **일 통계**(유의파고·최대파고·파주기·수온 등) 반환. **2017년~현재**(발간지연 ~1.5개월 — 이번 달·전월 일부는 아직 미발간이라 그 월만 조회하면 "발간되지 않은 기간" 메시지). 신규 신청 불필요.
+- **파고부이(C) 과거 이력의 정본**: kma_buoy.php/kma_buoy2.php 는 C형 미지원 → 과거는 `getDailyWaveBuoy`(일 해상도). 해양기상부이(B) 과거는 kma_buoy2.php(30분 고해상).
+- (초기 조사에서 '전 기간 미발간'으로 기술했던 것은 너무 최근 월만 조회해 발간지연을 하드블록으로 오판한 것 — 2026-07-15 실측으로 정정.)
 
 ### 1-6. 실시간 관측망 현황 (sea_obs, 2026-07-15 10:00 기준) — 총 186지점
 | TP | 종류 | 개수 |

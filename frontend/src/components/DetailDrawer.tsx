@@ -1,27 +1,48 @@
 /**
- * DetailDrawer — 상세 패널(Phase 3). 팝업 "상세" 버튼 → 우측 도크(챗봇 자리 대체)로 열림.
- * - 지점 제원(KMA 형식/센서고 · KHOA 코드/유형) + 현재 관측 mono 그리드 + Recharts 시계열.
- * - 시계열: `/api/timeseries?source=&id=&hours=` 조회, 메트릭/기간 칩, QC 플래그(관측기관) 점 오버레이.
- * - 알고리즘 기반 스파이크/결측 자동 QC 는 Phase 4 대상 — 여기서는 관측기관 QC(AQC/MQC)만 표시.
+ * DetailDrawer — 상세 패널(Wave 3b "연구 그레이드" 재설계, ui_revision_notes §6/§7).
+ * 팝업 "상세보기" 버튼 → 우측 도크(챗봇 자리 대체)로 열림.
+ *
+ * 정보 순서(§6 P0 재배치): 헤더 → **현재 관측**(임계값색+추세화살표) → **시계열 차트**(센터피스) →
+ * **지점 제원**(연구용 계측기 메타, 맨 아래). 관제(overview)는 지도/좌패널 톤을 유지하고, 여기 상세는
+ * "계측 분석" 톤(정밀 단위·통계·QC·예측 오버레이)으로 격상한다.
+ *
+ * 시계열 차트(핵심 산출물) — ComposedChart 로 관측/예측/임계선/QC 를 한 캔버스에:
+ *  - 관측: 그라디언트 Area(부드러운 monotone).
+ *  - 예측(24h, `/api/forecast`): 관측 끝점에서 **이어지는** 점선(경계 anchor 포인트를 공유해 시각적
+ *    단절 없이 이어짐) + "지금" ReferenceLine + 예측구간 ReferenceArea 음영. range=24h/7d 에서만
+ *    표시(30d/1y 에서는 24h 예측이 폭 대비 무의미하게 얇아져 표시하지 않는다).
+ *  - 임계값(파고 주의보 3m/경보 5m, 풍속 주의보 14m/s/경보 21m/s — utils/thresholds.ts) ReferenceLine.
+ *  - QC: 관측기관 플래그(`qc.flagged`) + 알고리즘 스파이크(`ai_qc.spike`) 를 서로 다른 색 점으로.
+ *  - 장기 구간(30d/1y)은 포인트 수가 매우 많아(예: 1년 30분해상도 ≈17,000) 렌더 성능을 위해
+ *    표시용으로만 다운샘플(통계·CSV 내보내기는 원본 전체 사용).
  */
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import {
-  ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceDot,
+  ResponsiveContainer, ComposedChart, Area, Line, XAxis, YAxis, CartesianGrid, Tooltip,
+  ReferenceDot, ReferenceLine, ReferenceArea,
 } from 'recharts'
 import { useStore } from '../store'
-import { mergeBuoys, type MergedBuoy } from '../utils/buoys'
+import { mergeBuoys, relativeFromMinutes, type MergedBuoy } from '../utils/buoys'
+import { categoryOf } from '../utils/buoyCategory'
+import { WAVE_THRESHOLDS, WIND_THRESHOLDS, THRESHOLD_HEX, waveLevel, windLevel } from '../utils/thresholds'
+import BuoyGlyph from './BuoyGlyph'
 import {
-  STATUS_HEX, STATUS_SOFT, STATUS_BORDER, STATUS_LABEL,
-  type StationMeta, type TimeseriesMetric, type TimeseriesPoint, type TimeseriesResponse,
+  STATUS_HEX, STATUS_SOFT, STATUS_BORDER, STATUS_LABEL, SOURCE_LABEL,
+  type StationMeta, type TimeseriesMetric, type TimeseriesRange, type TimeseriesPoint,
+  type TimeseriesResponse, type ForecastResponse,
 } from '../types'
 
-// index.css 의 CSS 변수와 반드시 일치시킬 것(Recharts SVG 속성에는 hex 리터럴을 직접 넣는다 — types.ts STATUS_HEX 와 동일 패턴)
-const ACCENT_HEX = '#4AA3FF'
-const LOST_HEX = '#E06A78'
-const LINE_HEX = '#223047'
-const TLO_HEX = '#647688'
-const BG_ELEV_HEX = '#16212F'
+// index.css 의 CSS 변수와 반드시 일치시킬 것(Recharts SVG 속성에는 hex 리터럴을 직접 넣는다)
+// 탈-네온 패스(2026-07-15): 시그니처 시안 → 채도 낮춘 마린 스틸-틸. 예측·QC 색도 전반적으로 톤다운.
+const ACCENT_HEX = '#5B96A0'    // 관측 — 절제된 액센트(마린 스틸-틸)
+const FORECAST_HEX = '#D3A467'  // 예측(점선) — 저채도 앰버, 관측(틸)과 뚜렷이 구분되는 난색
+const QC_INST_HEX = '#D9808C'   // 관측기관 QC 플래그(저채도 로즈)
+const QC_AI_HEX = '#9C8ED1'     // 알고리즘(AI) 이상감지(저채도 바이올렛) — 기관 QC 와 다른 색으로 구분
+const GRID_HEX = '#3E4F5C'      // 그리드라인 — 플롯면(PLOT_BG_HEX)보다 한 톤 밝게, 옅지만 확실히 보이도록
+const LINE_HEX = '#34434F'
+const TLO_HEX = '#82919E'
+const PLOT_BG_HEX = '#2B3947'   // 플롯 영역 배경(카드보다 한 단 밝은 면) — dot cutout 스트로크와 동일 색
 
 const METRICS: { key: TimeseriesMetric; label: string; unit: string }[] = [
   { key: 'wave', label: '파고', unit: 'm' },
@@ -29,6 +50,25 @@ const METRICS: { key: TimeseriesMetric; label: string; unit: string }[] = [
   { key: 'wind_speed', label: '풍속', unit: 'm/s' },
   { key: 'pressure', label: '기압', unit: 'hPa' },
 ]
+const RANGES: { key: TimeseriesRange; label: string }[] = [
+  { key: '24h', label: '24h' },
+  { key: '7d', label: '7일' },
+  { key: '30d', label: '30일' },
+  { key: '1y', label: '1년' },
+]
+// Y축 "nice number" 틱을 만들기 위한 지표별 반올림 단위
+const NICE_STEP: Record<TimeseriesMetric, number> = { wave: 1, wind_speed: 5, water_temp: 2, pressure: 5 }
+// 파고 0 부터, 풍속도 0 부터 시작(둘 다 음수 없음) — 수온/기압은 관측 범위에 맞춰 자동
+const ZERO_FLOOR: Record<TimeseriesMetric, boolean> = { wave: true, wind_speed: true, water_temp: false, pressure: false }
+// 값 표시 소수 자릿수
+const DECIMALS: Record<TimeseriesMetric, number> = { wave: 1, wind_speed: 1, water_temp: 1, pressure: 1 }
+
+const METRIC_THRESHOLDS: Partial<Record<TimeseriesMetric, { caution: number; warning: number }>> = {
+  wave: WAVE_THRESHOLDS,
+  wind_speed: WIND_THRESHOLDS,
+}
+
+const MAX_CHART_POINTS = 480 // 장기 구간(1y ≈17,000pt) 렌더 성능용 다운샘플 상한(통계/CSV 는 원본 사용)
 
 function degToCompass(deg: number | null | undefined): string {
   if (deg == null || !isFinite(deg)) return '-'
@@ -39,39 +79,114 @@ function degToCompass(deg: number | null | undefined): string {
 function hhmm(t: string): string {
   return t && t.length >= 16 ? t.slice(11, 16) : t
 }
+function mmdd(t: string): string {
+  return t && t.length >= 10 ? t.slice(5, 10).replace('-', '/') : t
+}
+function fullDt(t: string): string {
+  return t && t.length >= 16 ? `${mmdd(t)} ${hhmm(t)}` : t
+}
+
+function downsample<T>(arr: T[], max: number): T[] {
+  if (arr.length <= max) return arr
+  const stride = Math.ceil(arr.length / max)
+  const out: T[] = []
+  for (let i = 0; i < arr.length; i += stride) out.push(arr[i])
+  const last = arr[arr.length - 1]
+  if (out[out.length - 1] !== last) out.push(last)
+  return out
+}
+
+function fmtVal(v: number | null | undefined, decimals: number): string {
+  return v == null || !isFinite(v) ? '—' : v.toFixed(decimals)
+}
+
+function exportCsv(buoy: MergedBuoy, range: TimeseriesRange, points: TimeseriesPoint[]) {
+  const header = ['시각(KST)', '파고_m', '파주기_s', '풍속_ms', '풍향_deg', '수온_C', '기온_C', '기압_hPa', '기관QC', 'AI이상감지']
+  const rows = points.map(p => [
+    p.t, p.wave, p.wave_period, p.wind_speed, p.wind_dir, p.water_temp, p.air_temp, p.pressure,
+    p.qc?.flagged ? '1' : '0', p.ai_qc?.spike ? '1' : '0',
+  ].map(v => v == null ? '' : String(v)).join(','))
+  const csv = [header.join(','), ...rows].join('\n')
+  const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `${buoy.id}_${buoy.name}_${range}.csv`
+  a.click()
+  URL.revokeObjectURL(url)
+}
 
 // ── Main ─────────────────────────────────────────────────────────────────
 export default function DetailDrawer() {
-  const { stations, live, detailOpenId, closeDetail } = useStore(
-    useShallow(s => ({ stations: s.stations, live: s.live, detailOpenId: s.detailOpenId, closeDetail: s.closeDetail }))
+  const { stations, live, detailOpenId, closeDetail, openDetail } = useStore(
+    useShallow(s => ({ stations: s.stations, live: s.live, detailOpenId: s.detailOpenId, closeDetail: s.closeDetail, openDetail: s.openDetail }))
   )
 
   const buoys = useMemo(() => mergeBuoys(stations, live), [stations, live])
   const buoy = useMemo(() => buoys.find(b => b.id === detailOpenId) ?? null, [buoys, detailOpenId])
   const station = useMemo(() => stations.find(s => s.id === detailOpenId) ?? null, [stations, detailOpenId])
 
-  const [hours, setHours] = useState<24 | 48>(24)
+  // 이전/다음 지점 내비(이름순 — 검색·필터와 무관하게 항상 안정적인 전체 순서)
+  const orderedIds = useMemo(() => [...buoys].sort((a, b) => a.name.localeCompare(b.name, 'ko')).map(b => b.id), [buoys])
+
+  const [range, setRange] = useState<TimeseriesRange>('24h')
   const [metric, setMetric] = useState<TimeseriesMetric>('wave')
   const [ts, setTs] = useState<TimeseriesResponse | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [forecast, setForecast] = useState<ForecastResponse | null>(null)
+  // 현재관측 카드의 추세 화살표용 — 사용자가 고른 차트 range 와 무관하게 항상 최근 24h 기준(§6).
+  const [recentTs, setRecentTs] = useState<TimeseriesResponse | null>(null)
 
+  // §14 — 지표 탭 전환 시 반드시 `metric` 을 붙여 재조회한다(백엔드가 이 값으로 AI-QC/시연
+  // 스파이크·QC 요약을 계산한다 — 이전엔 wave 고정 요청이라 다른 지표 탭에서 QC 가 어긋났었다).
   useEffect(() => {
     if (!buoy) return
     let cancelled = false
     setLoading(true)
     setError(null)
-    fetch(`/api/timeseries?source=${buoy.source}&id=${encodeURIComponent(buoy.id)}&hours=${hours}`)
+    fetch(`/api/timeseries?source=${buoy.source}&id=${encodeURIComponent(buoy.id)}&range=${range}&metric=${metric}`)
       .then(r => { if (!r.ok) throw new Error(String(r.status)); return r.json() })
       .then((d: TimeseriesResponse) => {
         if (cancelled) return
         if (d.error) throw new Error(d.error)
         setTs(d)
       })
-      .catch(() => { if (!cancelled) { setError('이 지점은 실시간 이력이 제공되지 않습니다'); setTs(null) } })
+      .catch(() => { if (!cancelled) { setError('이 지점은 이력이 제공되지 않습니다'); setTs(null) } })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
-  }, [buoy?.id, buoy?.source, hours])
+  }, [buoy?.id, buoy?.source, range, metric])
+
+  // §14 — 부이 전환 시 현재 선택 지표가 그 지점의 available_metrics 에 없으면 첫 available 로 폴백
+  // (예: 파고 탭을 보다가 풍속·기압이 없는 KHOA 부이로 이동하면 자동으로 파고/수온 등으로 전환).
+  useEffect(() => {
+    if (!buoy) return
+    const avail = (buoy.available_metrics?.length ? buoy.available_metrics : METRICS.map(m => m.key)) as TimeseriesMetric[]
+    if (!avail.includes(metric)) setMetric(avail[0] ?? 'wave')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [buoy?.id])
+
+  // 24h/7d 예측 오버레이 — 30d/1y 에서는 폭 대비 24h 가 무의미해 요청하지 않는다.
+  useEffect(() => {
+    setForecast(null)
+    if (!buoy || (range !== '24h' && range !== '7d')) return
+    let cancelled = false
+    fetch(`/api/forecast?source=${buoy.source}&id=${encodeURIComponent(buoy.id)}&metric=${metric}`)
+      .then(r => r.ok ? r.json() : null)
+      .then((d: ForecastResponse | null) => { if (!cancelled && d && !d.error) setForecast(d) })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [buoy?.id, buoy?.source, metric, range])
+
+  useEffect(() => {
+    if (!buoy) return
+    let cancelled = false
+    fetch(`/api/timeseries?source=${buoy.source}&id=${encodeURIComponent(buoy.id)}&hours=24`)
+      .then(r => r.ok ? r.json() : null)
+      .then((d: TimeseriesResponse | null) => { if (!cancelled && d && !d.error) setRecentTs(d) })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [buoy?.id, buoy?.source])
 
   useEffect(() => {
     if (!detailOpenId) return
@@ -82,26 +197,31 @@ export default function DetailDrawer() {
 
   if (!detailOpenId) return null
 
+  const idx = orderedIds.indexOf(detailOpenId)
+  const goPrev = () => { if (idx > 0) openDetail(orderedIds[idx - 1]); else if (orderedIds.length) openDetail(orderedIds[orderedIds.length - 1]) }
+  const goNext = () => { if (idx >= 0 && idx < orderedIds.length - 1) openDetail(orderedIds[idx + 1]); else if (orderedIds.length) openDetail(orderedIds[0]) }
+
   return (
     <aside className="detail-drawer" style={{
-      width: 'clamp(460px, 32vw, 560px)', flexShrink: 0, background: 'var(--bg-base)',
+      width: 'clamp(490px, 34vw, 620px)', flexShrink: 0, background: 'var(--bg-panel)',
       borderLeft: '1px solid var(--line)', display: 'flex', flexDirection: 'column', overflow: 'hidden',
+      boxShadow: '-6px 0 24px rgba(0,0,0,0.38)',
     }}>
       {!buoy ? (
-        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--t-lo)', fontSize: 13 }}>
+        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--t-lo)', fontSize: 14 }}>
           지점 정보를 불러오는 중…
         </div>
       ) : (
         <>
-          <DrawerHeader buoy={buoy} onClose={closeDetail} />
-          <div style={{ flex: 1, overflowY: 'auto', padding: '16px' }}>
-            <SpecsBlock station={station} buoy={buoy} />
-            <CurrentReadout buoy={buoy} />
+          <DrawerHeader buoy={buoy} onClose={closeDetail} onPrev={goPrev} onNext={goNext} />
+          <div style={{ flex: 1, overflowY: 'auto', padding: '17px' }}>
+            <CurrentReadout buoy={buoy} recentTs={recentTs} />
             <TimeseriesSection
-              buoy={buoy} hours={hours} setHours={setHours}
+              buoy={buoy} range={range} setRange={setRange}
               metric={metric} setMetric={setMetric}
-              ts={ts} loading={loading} error={error}
+              ts={ts} loading={loading} error={error} forecast={forecast}
             />
+            <SpecsBlock station={station} buoy={buoy} />
           </div>
         </>
       )}
@@ -110,249 +230,465 @@ export default function DetailDrawer() {
 }
 
 // ── Header ───────────────────────────────────────────────────────────────
-function DrawerHeader({ buoy, onClose }: { buoy: MergedBuoy; onClose: () => void }) {
+function DrawerHeader({ buoy, onClose, onPrev, onNext }: {
+  buoy: MergedBuoy; onClose: () => void; onPrev: () => void; onNext: () => void
+}) {
   const hex = STATUS_HEX[buoy.status]
+  const category = categoryOf(buoy)
   return (
     <div style={{
-      background: 'var(--bg-panel)', borderBottom: '1px solid var(--line)',
-      padding: '14px 16px', flexShrink: 0, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10,
+      background: 'var(--bg-base)', borderBottom: '1px solid var(--line)',
+      padding: '15px 15px 15px 17px', flexShrink: 0, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8,
+      boxShadow: 'var(--edge-hi)',
     }}>
-      <div style={{ minWidth: 0 }}>
-        <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--t-hi)', letterSpacing: '-0.01em', lineHeight: 1.25 }}>
-          {buoy.name}
+      <div style={{ minWidth: 0, display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+        <div style={{ marginTop: 2, background: 'var(--bg-elev)', border: '1px solid var(--line)', borderRadius: 7, padding: 5, flexShrink: 0 }}>
+          <BuoyGlyph category={category} fill={hex} size={18} />
         </div>
-        {buoy.name_en && <div style={{ fontSize: 11.5, color: 'var(--t-lo)', marginTop: 2 }}>{buoy.name_en}</div>}
-        <div style={{ display: 'flex', gap: 6, marginTop: 9, flexWrap: 'wrap', alignItems: 'center' }}>
-          <Tag label={buoy.source} />
-          <Tag label={buoy.tp_label ?? buoy.tp} />
-          <span style={{
-            display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 600, color: hex,
-            background: STATUS_SOFT[buoy.status], border: `1px solid ${STATUS_BORDER[buoy.status]}`,
-            borderRadius: 20, padding: '3px 9px 3px 7px',
-          }}>
-            <span style={{ width: 5, height: 5, borderRadius: '50%', background: hex, flexShrink: 0 }} />
-            {STATUS_LABEL[buoy.status]}
-          </span>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontSize: 19, fontWeight: 700, color: 'var(--t-hi)', letterSpacing: '-0.01em', lineHeight: 1.28 }}>
+            {buoy.name}
+          </div>
+          {buoy.name_en && <div style={{ fontSize: 13, color: 'var(--t-lo)', marginTop: 2 }}>{buoy.name_en}</div>}
+          {/* 종류 태그(해양기상부이 등)는 제거(§12) — 옆 글리프가 모양으로 이미 전달한다.
+              기관(Source) 태그만 유지. */}
+          <div style={{ display: 'flex', gap: 6, marginTop: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+            <Tag label={SOURCE_LABEL[buoy.source]} />
+            <span style={{
+              display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 13, fontWeight: 700, color: hex,
+              background: STATUS_SOFT[buoy.status], border: `1px solid ${STATUS_BORDER[buoy.status]}`,
+              borderRadius: 6, padding: '4px 10px 4px 8px',
+            }}>
+              <span style={{ width: 6, height: 6, borderRadius: '50%', background: hex, flexShrink: 0 }} />
+              {STATUS_LABEL[buoy.status]}
+            </span>
+          </div>
         </div>
       </div>
-      <button onClick={onClose} aria-label="상세 패널 닫기" title="닫기" style={{
-        width: 26, height: 26, borderRadius: 6, flexShrink: 0, cursor: 'pointer',
-        background: 'var(--bg-elev)', border: '1px solid var(--line)', color: 'var(--t-mid)',
-        fontSize: 15, lineHeight: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
-        transition: 'color 0.12s, border-color 0.12s',
-      }}>×</button>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+        <HeaderIconBtn label="이전 지점" onClick={onPrev}>‹</HeaderIconBtn>
+        <HeaderIconBtn label="다음 지점" onClick={onNext}>›</HeaderIconBtn>
+        <div style={{ width: 1, height: 18, background: 'var(--line)', margin: '0 3px' }} />
+        <HeaderIconBtn label="상세 패널 닫기" onClick={onClose}>×</HeaderIconBtn>
+      </div>
     </div>
+  )
+}
+
+function HeaderIconBtn({ label, onClick, children }: { label: string; onClick: () => void; children: ReactNode }) {
+  return (
+    <button onClick={onClick} aria-label={label} title={label} style={{
+      width: 28, height: 28, borderRadius: 7, flexShrink: 0, cursor: 'pointer',
+      background: 'var(--bg-elev)', border: '1px solid var(--line)', color: 'var(--t-mid)',
+      fontSize: 16, lineHeight: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
+      transition: 'color 0.12s, border-color 0.12s',
+    }}>{children}</button>
   )
 }
 
 function Tag({ label }: { label: string }) {
   return (
-    <span className="mono" style={{
-      fontSize: 10.5, fontWeight: 500, color: 'var(--t-mid)',
-      border: '1px solid var(--line)', borderRadius: 4, padding: '2px 7px',
+    <span className="tnum" style={{
+      fontSize: 13, fontWeight: 600, color: 'var(--t-mid)',
+      background: 'var(--bg-elev)', border: '1px solid var(--line)', borderRadius: 6, padding: '3px 9px',
     }}>{label}</span>
   )
 }
 
-function Section({ title, children }: { title: string; children: ReactNode }) {
+function Section({ title, children, right }: { title: string; children: ReactNode; right?: ReactNode }) {
   return (
-    <div style={{ marginBottom: 22 }}>
-      <div className="eyebrow" style={{ marginBottom: 10 }}>{title}</div>
+    <div style={{ marginBottom: 24 }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 11 }}>
+        <div className="eyebrow">{title}</div>
+        {right}
+      </div>
       {children}
     </div>
   )
 }
 
-// ── Specs ────────────────────────────────────────────────────────────────
-function SpecsBlock({ station, buoy }: { station: StationMeta | null; buoy: MergedBuoy }) {
-  if (!station) return null
-  const isKMA = station.source === 'KMA'
-  const sh = station.sensor_heights ?? {}
+// ── 현재 관측 ────────────────────────────────────────────────────────────
+type TrendDir = 'up' | 'down' | 'flat' | null
+
+function trendFor(points: TimeseriesPoint[] | undefined, key: keyof TimeseriesPoint): TrendDir {
+  if (!points || points.length < 2) return null
+  const vals = points.filter(p => typeof p[key] === 'number') as (TimeseriesPoint & Record<string, number>)[]
+  if (vals.length < 2) return null
+  const last = vals[vals.length - 1][key] as unknown as number
+  const prev = vals[vals.length - 2][key] as unknown as number
+  if (last === prev) return 'flat'
+  return last > prev ? 'up' : 'down'
+}
+
+function TrendArrow({ dir }: { dir: TrendDir }) {
+  if (dir == null || dir === 'flat') return null
   return (
-    <Section title="지점 제원">
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-        {isKMA ? (
-          <>
-            <SpecCell label="부이형식" value={station.form ?? '-'} />
-            <SpecCell label="지점코드" value={station.stn_id ?? station.id} />
-            <SpecCell label="센서고 · 수온" value={sh.tw ? `${sh.tw} m` : '-'} />
-            <SpecCell label="센서고 · 파고" value={sh.wh ? `${sh.wh} m` : '-'} />
-            <SpecCell label="센서고 · 풍향" value={sh.wd ? `${sh.wd} m` : '-'} />
-          </>
-        ) : (
-          <>
-            <SpecCell label="코드" value={station.stn_id ?? station.id} />
-            <SpecCell label="유형" value={buoy.tp ?? station.tp ?? '-'} />
-          </>
-        )}
-      </div>
-    </Section>
+    <span style={{ fontSize: 13, marginLeft: 4, color: dir === 'up' ? 'var(--delay)' : 'var(--accent-h)', fontWeight: 700 }}>
+      {dir === 'up' ? '▲' : '▼'}
+    </span>
   )
 }
 
-function SpecCell({ label, value }: { label: string; value: string }) {
-  return (
-    <div style={{ background: 'var(--bg-panel)', border: '1px solid var(--line)', borderRadius: 5, padding: '7px 9px' }}>
-      <div className="eyebrow" style={{ fontSize: 9, marginBottom: 3 }}>{label}</div>
-      <div className="mono" style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--t-hi)' }}>{value}</div>
-    </div>
-  )
-}
-
-// ── Current readout ──────────────────────────────────────────────────────
-function CurrentReadout({ buoy }: { buoy: MergedBuoy }) {
+function CurrentReadout({ buoy, recentTs }: { buoy: MergedBuoy; recentTs: TimeseriesResponse | null }) {
   const v = buoy.values
-  const cells: { label: string; value: string; unit?: string }[] = []
-  if (v.wave_height != null) cells.push({ label: '파고', value: v.wave_height.toFixed(1), unit: 'm' })
+  type Cell = { label: string; value: string; unit?: string; color?: string; trend: TrendDir }
+  const cells: Cell[] = []
+  if (v.wave_height != null) cells.push({
+    label: '파고', value: v.wave_height.toFixed(1), unit: 'm',
+    color: THRESHOLD_HEX[waveLevel(v.wave_height)], trend: trendFor(recentTs?.points, 'wave'),
+  })
   if (v.wind_speed != null) cells.push({
     label: `풍속 (${degToCompass(v.wind_dir)}${v.wind_dir != null ? ` ${Math.round(v.wind_dir)}°` : ''})`,
     value: v.wind_speed.toFixed(1), unit: 'm/s',
+    color: THRESHOLD_HEX[windLevel(v.wind_speed)], trend: trendFor(recentTs?.points, 'wind_speed'),
   })
-  if (v.water_temp != null) cells.push({ label: '수온', value: v.water_temp.toFixed(1), unit: '℃' })
-  if (v.pressure != null) cells.push({ label: '기압', value: v.pressure.toFixed(1), unit: 'hPa' })
+  if (v.water_temp != null) cells.push({
+    label: '수온', value: v.water_temp.toFixed(1), unit: '℃', trend: trendFor(recentTs?.points, 'water_temp'),
+  })
+  if (v.pressure != null) cells.push({
+    label: '기압', value: v.pressure.toFixed(1), unit: 'hPa', trend: trendFor(recentTs?.points, 'pressure'),
+  })
 
+  const cadence = recentTs?.cadence_min
   return (
     <Section title="현재 관측">
       {cells.length > 0 ? (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
           {cells.map(c => (
-            <div key={c.label} style={{ background: 'var(--bg-panel)', border: '1px solid var(--line)', borderRadius: 5, padding: '9px 11px' }}>
-              <div className="eyebrow" style={{ fontSize: 9, marginBottom: 4 }}>{c.label}</div>
-              <div className="mono" style={{ fontSize: 16, fontWeight: 600, color: 'var(--t-hi)' }}>
-                {c.value}{c.unit && <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--t-lo)', marginLeft: 3 }}>{c.unit}</span>}
+            <div key={c.label} style={{ background: 'var(--bg-elev)', border: '1px solid var(--line)', borderRadius: 8, padding: '12px 13px', boxShadow: 'var(--edge-hi)' }}>
+              <div className="eyebrow" style={{ marginBottom: 5 }}>{c.label}</div>
+              <div className="tnum" style={{ fontSize: 21, fontWeight: 700, color: c.color ?? 'var(--t-hi)', display: 'flex', alignItems: 'baseline' }}>
+                {c.value}{c.unit && <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--t-lo)', marginLeft: 3 }}>{c.unit}</span>}
+                <TrendArrow dir={c.trend} />
               </div>
             </div>
           ))}
         </div>
       ) : (
-        <div style={{ fontSize: 12.5, color: 'var(--t-lo)', padding: '10px 0' }}>표시할 관측값이 없습니다</div>
+        <div style={{ fontSize: 13.5, color: 'var(--t-lo)', padding: '10px 0' }}>표시할 관측값이 없습니다</div>
       )}
-      <div className="mono" style={{ fontSize: 10.5, color: 'var(--t-lo)', marginTop: 8 }}>
-        {buoy.obs_time ?? '관측 이력 없음'} · {buoy.lat.toFixed(3)}°N, {buoy.lon.toFixed(3)}°E
+      <div className="tnum" style={{ fontSize: 13, color: 'var(--t-lo)', marginTop: 10, fontWeight: 500 }}>
+        {buoy.obs_time ? `${buoy.obs_time} KST` : '관측 이력 없음'} · {relativeFromMinutes(buoy.minutes_since)}
+        {cadence != null && <> · 관측주기 ~{cadence >= 60 ? `${Math.round(cadence / 60)}시간` : `${Math.round(cadence)}분`}</>}
       </div>
     </Section>
   )
 }
 
-// ── Timeseries ───────────────────────────────────────────────────────────
-function TimeseriesSection({ buoy, hours, setHours, metric, setMetric, ts, loading, error }: {
+// ── 시계열 차트(센터피스) ───────────────────────────────────────────────
+// fcLower/fcWidth — 예측 불확실성 밴드(신규): Recharts 스택 Area 2겹으로 그린다(투명 base=fcLower +
+// 그 위에 쌓는 밴드 폭=fcWidth 만큼만 채색) → 화면엔 [fcLower, fcLower+fcWidth]=[lower, upper] 구간이
+// 음영으로 보인다. 관측 구간 row 에는 두 필드 모두 없음(undefined) → 그 구간엔 밴드가 그려지지 않는다.
+type ChartRow = {
+  t: string; obs?: number | null; fc?: number | null
+  fcLower?: number | null; fcWidth?: number | null
+  qcFlag?: boolean; aiSpike?: boolean
+}
+
+function TimeseriesSection({ buoy, range, setRange, metric, setMetric, ts, loading, error, forecast }: {
   buoy: MergedBuoy
-  hours: 24 | 48
-  setHours: (h: 24 | 48) => void
+  range: TimeseriesRange
+  setRange: (r: TimeseriesRange) => void
   metric: TimeseriesMetric
   setMetric: (m: TimeseriesMetric) => void
   ts: TimeseriesResponse | null
   loading: boolean
   error: string | null
+  forecast: ForecastResponse | null
 }) {
   const metricCfg = METRICS.find(m => m.key === metric)!
   const points = ts?.points ?? []
-  const flaggedDots = useMemo(
-    () => points.filter(p => p.qc.flagged && p[metric] != null),
-    [points, metric]
-  )
+  const stats = ts?.stats?.[metric]
+  const forecastActive = (range === '24h' || range === '7d') && !!forecast?.points.length && !!points.length
+  const isDaily = ts?.resolution === 'daily'
+
+  const displayPoints = useMemo(() => downsample(points, MAX_CHART_POINTS), [points])
+
+  const chartData = useMemo<ChartRow[]>(() => {
+    const rows = new Map<string, ChartRow>()
+    for (const p of displayPoints) {
+      rows.set(p.t, { t: p.t, obs: p[metric] ?? null, qcFlag: !!p.qc?.flagged, aiSpike: !!p.ai_qc?.spike })
+    }
+    if (forecastActive && points.length) {
+      const lastObs = points[points.length - 1]
+      const lastVal = lastObs[metric]
+      if (lastVal != null) {
+        // 앵커(관측 끝점) — 예측선과 이어지는 시작점이자 밴드의 폭 0 시작점(리드타임 0 → 불확실성 0).
+        const anchor = rows.get(lastObs.t) ?? { t: lastObs.t }
+        anchor.fc = lastVal
+        anchor.fcLower = lastVal
+        anchor.fcWidth = 0
+        rows.set(lastObs.t, anchor)
+      }
+      for (const fp of forecast!.points) {
+        const row = rows.get(fp.t) ?? { t: fp.t }
+        row.fc = fp.value
+        if (fp.lower != null && fp.upper != null) {
+          row.fcLower = fp.lower
+          row.fcWidth = Math.max(0, fp.upper - fp.lower)
+        }
+        rows.set(fp.t, row)
+      }
+    }
+    return [...rows.values()].sort((a, b) => (a.t < b.t ? -1 : a.t > b.t ? 1 : 0))
+  }, [displayPoints, forecastActive, forecast, points, metric])
+
+  const nowT = forecastActive ? points[points.length - 1].t : null
+  const forecastEndT = forecastActive ? forecast!.points[forecast!.points.length - 1].t : null
+
+  const threshold = METRIC_THRESHOLDS[metric]
+  const step = NICE_STEP[metric]
+  const { yMin, yMax } = useMemo(() => {
+    const vals = chartData
+      .flatMap(r => [r.obs, r.fc, r.fcLower != null && r.fcWidth != null ? r.fcLower + r.fcWidth : null])
+      .filter((v): v is number => v != null)
+    if (threshold) vals.push(threshold.warning)
+    if (!vals.length) return { yMin: 0, yMax: step * 4 }
+    const rawMax = Math.max(...vals)
+    const rawMin = Math.min(...vals)
+    const max = Math.ceil((rawMax * 1.08) / step) * step
+    const min = ZERO_FLOOR[metric] ? 0 : Math.floor(rawMin / step) * step
+    return { yMin: min, yMax: max <= min ? min + step : max }
+  }, [chartData, threshold, step, metric])
+
+  const qcDots = useMemo(() => chartData.filter(r => r.qcFlag && r.obs != null), [chartData])
+  const aiDots = useMemo(() => chartData.filter(r => r.aiSpike && r.obs != null), [chartData])
+  const gradId = `obs-grad-${metric}`
+
+  const currentVal = points.length ? points[points.length - 1][metric] : null
+
+  // §14 — 이 지점이 실제 제공하는 지표만 탭으로 노출(순서는 METRICS 고정 순서 유지).
+  // available_metrics 가 아직 없으면(방어적 케이스) 전체 4종으로 폴백.
+  const availMetrics = buoy.available_metrics?.length ? buoy.available_metrics : METRICS.map(m => m.key)
+  const visibleMetrics = METRICS.filter(m => availMetrics.includes(m.key))
 
   return (
-    <Section title="시계열">
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-          {METRICS.map(m => (
-            <Chip key={m.key} active={metric === m.key} onClick={() => setMetric(m.key)}>
-              {m.label} <span style={{ opacity: 0.65 }}>{m.unit}</span>
-            </Chip>
-          ))}
+    <Section title="시계열"
+      right={points.length > 0 && (
+        <button onClick={() => exportCsv(buoy, range, points)} className="tnum" style={{
+          fontSize: 13, fontWeight: 700, color: 'var(--t-lo)', background: 'transparent',
+          border: '1px solid var(--line)', borderRadius: 5, padding: '3px 9px', cursor: 'pointer',
+        }} title="현재 구간 관측 원자료를 CSV로 내보내기">⬇ CSV</button>
+      )}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center', justifyContent: 'space-between', marginBottom: 11 }}>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+          {visibleMetrics.length > 1 ? (
+            visibleMetrics.map(m => (
+              <Chip key={m.key} active={metric === m.key} onClick={() => setMetric(m.key)}>
+                {m.label} <span style={{ opacity: 0.7 }}>{m.unit}</span>
+              </Chip>
+            ))
+          ) : (
+            // 지표가 하나뿐인 지점 — 전환할 게 없으므로 탭 UI 대신 라벨만 표시(§14)
+            visibleMetrics[0] && (
+              <span className="eyebrow" style={{ padding: '6px 2px 6px 0' }}>
+                {visibleMetrics[0].label} <span style={{ opacity: 0.75 }}>{visibleMetrics[0].unit}</span>
+              </span>
+            )
+          )}
         </div>
         <div style={{ display: 'flex', gap: 6 }}>
-          {([24, 48] as const).map(h => (
-            <Chip key={h} active={hours === h} onClick={() => setHours(h)}>{h}h</Chip>
+          {RANGES.map(r => (
+            <Chip key={r.key} active={range === r.key} onClick={() => setRange(r.key)}>{r.label}</Chip>
           ))}
         </div>
       </div>
 
-      <div style={{ background: 'var(--bg-panel)', border: '1px solid var(--line)', borderRadius: 7, padding: '12px 12px 6px' }}>
+      <div style={{ background: 'var(--bg-elev)', border: '1px solid var(--line)', borderRadius: 10, padding: '16px 16px 8px', position: 'relative', boxShadow: 'var(--edge-hi)' }}>
         {loading ? (
-          <EmptyState text="관측 이력을 불러오는 중…" />
+          <EmptyState title="불러오는 중…" sub="관측 이력을 불러오는 중…" />
         ) : error ? (
-          <EmptyState text={error} />
+          <EmptyState title="이력 없음" sub={error} />
         ) : points.length === 0 ? (
-          <EmptyState text="표시할 관측 이력이 없습니다" />
+          <EmptyState title="이력 없음" sub="이 지점은 이력이 제공되지 않습니다" />
         ) : (
-          <ResponsiveContainer width="100%" height={220}>
-            <LineChart data={points} margin={{ top: 6, right: 10, left: 0, bottom: 0 }}>
-              <CartesianGrid stroke={LINE_HEX} strokeDasharray="2 4" vertical={false} />
-              <XAxis dataKey="t" tickFormatter={hhmm}
-                tick={{ fontSize: 10, fill: TLO_HEX, fontFamily: 'var(--font-mono)' }}
-                axisLine={{ stroke: LINE_HEX }} tickLine={false}
-                interval={Math.max(0, Math.floor(points.length / 6) - 1)} minTickGap={20} />
-              <YAxis tick={{ fontSize: 10, fill: TLO_HEX, fontFamily: 'var(--font-mono)' }}
-                axisLine={false} tickLine={false} width={36} domain={['auto', 'auto']} />
-              <Tooltip content={<ChartTooltip unit={metricCfg.unit} metricLabel={metricCfg.label} />}
-                cursor={{ stroke: LINE_HEX }} />
-              <Line type="monotone" dataKey={metric} stroke={ACCENT_HEX} strokeWidth={1.6}
-                dot={false} isAnimationActive={false} connectNulls />
-              {flaggedDots.map(p => (
-                <ReferenceDot key={`qc-${p.t}`} x={p.t} y={p[metric] as number}
-                  r={3.2} fill={LOST_HEX} stroke={BG_ELEV_HEX} strokeWidth={1} ifOverflow="extendDomain" />
-              ))}
-            </LineChart>
-          </ResponsiveContainer>
+          <>
+            {/* 단위 태그 — Y축이 무엇을 나타내는지 항상 좌상단에서 즉시 확인 가능. 플롯면(PLOT_BG_HEX,
+                아래 참고)보다 확실히 어둡게 대비를 줘 카드/플롯 어느 쪽 위에서도 또렷이 읽힌다. */}
+            <div className="tnum" style={{
+              position: 'absolute', top: 12, left: 16, zIndex: 2, fontSize: 13, fontWeight: 700,
+              color: 'var(--t-mid)', background: 'var(--bg-panel)', border: '1px solid var(--line)',
+              borderRadius: 5, padding: '2px 7px', pointerEvents: 'none',
+            }}>{metricCfg.unit}</div>
+
+            {forecastActive && (
+              <div className="tnum" style={{
+                position: 'absolute', top: 12, right: 16, zIndex: 2, fontSize: 13, fontWeight: 700,
+                color: FORECAST_HEX, background: 'var(--bg-panel)', border: `1px solid ${FORECAST_HEX}55`,
+                borderRadius: 5, padding: '2px 8px', pointerEvents: 'auto', cursor: 'default',
+              }}
+                title="음영 밴드=예측 불확실성 구간(통계 보정 없는 시연용 참고치, 리드타임이 길수록 벌어짐)"
+              >┄ 예측(모의 24h)</div>
+            )}
+
+            {/* 플롯 면 — 카드(--bg-elev)보다 한 톤 밝은 --bg-hover 로 "종이" 느낌의 구분된 표면을 준다
+                (탈-네온 시계열 가독성 패스). 그리드·데이터 잉크가 이 면 위에서 대비를 갖는다. */}
+            <div style={{ background: PLOT_BG_HEX, borderRadius: 8, padding: '20px 6px 2px' }}>
+            <ResponsiveContainer width="100%" height={256}>
+              <ComposedChart data={chartData} margin={{ top: 6, right: 10, left: 2, bottom: 0 }}>
+                <defs>
+                  <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor={ACCENT_HEX} stopOpacity={0.32} />
+                    <stop offset="100%" stopColor={ACCENT_HEX} stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid stroke={GRID_HEX} strokeDasharray="0" vertical={false} />
+                <XAxis dataKey="t" tickFormatter={range === '24h' ? hhmm : mmdd}
+                  tick={{ fontSize: 13, fill: TLO_HEX, fontFamily: 'var(--font-ui)' }}
+                  axisLine={{ stroke: LINE_HEX }} tickLine={false}
+                  interval={Math.max(0, Math.floor(chartData.length / 6) - 1)} minTickGap={28} />
+                <YAxis tick={{ fontSize: 13, fill: TLO_HEX, fontFamily: 'var(--font-ui)' }}
+                  axisLine={false} tickLine={false} width={38} domain={[yMin, yMax]}
+                  allowDecimals={step < 1} tickCount={5} />
+                <Tooltip content={<ChartTooltip unit={metricCfg.unit} metricLabel={metricCfg.label} decimals={DECIMALS[metric]} />}
+                  cursor={{ stroke: ACCENT_HEX, strokeWidth: 1, strokeDasharray: '3 3' }} />
+
+                {/* 정상범위/특보 임계선 — 파고·풍속만(공개된 KMA 특보 정량기준 근사치). 주의보 라벨은
+                    "위" 정렬로, 경보 라벨은 "아래" 정렬로 서로 어긋나게 배치해 두 선이 가까워도
+                    라벨끼리 겹치지 않는다. */}
+                {threshold && (
+                  <>
+                    <ReferenceLine y={threshold.caution} stroke={THRESHOLD_HEX.caution} strokeDasharray="4 3" strokeWidth={1.3}
+                      label={{ value: `주의보 ${threshold.caution}${metricCfg.unit}`, position: 'insideBottomRight', fill: THRESHOLD_HEX.caution, fontSize: 13, fontWeight: 600 }} />
+                    <ReferenceLine y={threshold.warning} stroke={THRESHOLD_HEX.warning} strokeDasharray="4 3" strokeWidth={1.3}
+                      label={{ value: `경보 ${threshold.warning}${metricCfg.unit}`, position: 'insideTopRight', fill: THRESHOLD_HEX.warning, fontSize: 13, fontWeight: 600 }} />
+                  </>
+                )}
+
+                {/* 예측 구간 음영 + "지금" 경계선 */}
+                {forecastActive && nowT && forecastEndT && (
+                  <ReferenceArea x1={nowT} x2={forecastEndT} fill={FORECAST_HEX} fillOpacity={0.10} strokeOpacity={0} ifOverflow="extendDomain" />
+                )}
+                {forecastActive && nowT && (
+                  <ReferenceLine x={nowT} stroke={TLO_HEX} strokeDasharray="2 2" strokeWidth={1.3}
+                    label={{ value: '지금', position: 'insideBottomLeft', fill: 'var(--t-hi)', fontSize: 13, fontWeight: 700 }} />
+                )}
+
+                {/* 관측 — 부드러운 그라디언트 Area */}
+                <Area type="monotone" dataKey="obs" stroke={ACCENT_HEX} strokeWidth={2}
+                  fill={`url(#${gradId})`} dot={false} activeDot={{ r: 4, fill: ACCENT_HEX, stroke: PLOT_BG_HEX, strokeWidth: 2 }}
+                  isAnimationActive={false} connectNulls={false} />
+
+                {/* 예측 불확실성 밴드 — 스택 Area 2겹(투명 base=fcLower + 채색 폭=fcWidth)으로
+                    [lower, upper] 구간을 음영 처리한다. 점선 예측선보다 먼저(뒤에) 그린다.
+                    관측 구간은 두 필드 모두 없어(undefined) 밴드가 그려지지 않는다. */}
+                {forecastActive && (
+                  <>
+                    <Area type="monotone" dataKey="fcLower" stackId="fcband" stroke="none" fill="transparent"
+                      isAnimationActive={false} connectNulls legendType="none" tooltipType="none" activeDot={false} />
+                    <Area type="monotone" dataKey="fcWidth" stackId="fcband" stroke="none" fill={FORECAST_HEX} fillOpacity={0.22}
+                      isAnimationActive={false} connectNulls legendType="none" tooltipType="none" activeDot={false} />
+                  </>
+                )}
+
+                {/* 예측 — 관측 끝점에서 이어지는 점선(다른 색) */}
+                {forecastActive && (
+                  <Line type="monotone" dataKey="fc" stroke={FORECAST_HEX} strokeWidth={2} strokeDasharray="6 4"
+                    dot={false} activeDot={{ r: 3.5, fill: FORECAST_HEX, stroke: PLOT_BG_HEX, strokeWidth: 1.5 }}
+                    isAnimationActive={false} connectNulls />
+                )}
+
+                {qcDots.map(r => (
+                  <ReferenceDot key={`qc-${r.t}`} x={r.t} y={r.obs as number}
+                    r={4} fill={QC_INST_HEX} stroke={PLOT_BG_HEX} strokeWidth={1.5} ifOverflow="extendDomain" />
+                ))}
+                {aiDots.map(r => (
+                  <ReferenceDot key={`ai-${r.t}`} x={r.t} y={r.obs as number}
+                    r={2.2} fill={QC_AI_HEX} stroke="none" ifOverflow="extendDomain" />
+                ))}
+              </ComposedChart>
+            </ResponsiveContainer>
+            </div>
+          </>
         )}
       </div>
 
+      {/* 통계 스트립 */}
       {!loading && !error && points.length > 0 && (
-        <div style={{ marginTop: 9, display: 'flex', flexDirection: 'column', gap: 4 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 10.5, color: 'var(--t-lo)' }}>
-            <span style={{ width: 6, height: 6, borderRadius: '50%', background: LOST_HEX, flexShrink: 0 }} />
-            <span>● QC 플래그(관측기관){ts && ts.qc_summary.flagged_count > 0 ? ` — ${ts.qc_summary.flagged_count}건` : ''}</span>
-          </div>
-          {ts && !ts.qc_summary.checked && (
-            <div style={{ fontSize: 10.5, color: 'var(--t-lo)' }}>
-              QC 미검사 — {buoy.source === 'KHOA' ? 'KHOA 실시간 자료는 기관 QC 플래그를 제공하지 않습니다' : '이 구간은 관측기관 QC 검사 이력이 없습니다'}
-            </div>
-          )}
-          <div style={{ fontSize: 10.5, color: 'var(--t-lo)' }}>
-            알고리즘 기반 이상치·결측 자동 탐지(AI QC)는 다음 단계(Phase 4)에서 추가됩니다.
-          </div>
+        <div className="tnum" style={{ display: 'flex', gap: 0, marginTop: 10, background: 'var(--bg-elev)',
+          border: '1px solid var(--line)', borderRadius: 8, overflow: 'hidden', boxShadow: 'var(--edge-hi)' }}>
+          <StatCell label="현재" value={fmtVal(currentVal, DECIMALS[metric])} unit={metricCfg.unit} />
+          <StatCell label="평균" value={fmtVal(stats?.mean, DECIMALS[metric])} unit={metricCfg.unit} />
+          <StatCell label="최고" value={fmtVal(stats?.max, DECIMALS[metric])} unit={metricCfg.unit} />
+          <StatCell label="최저" value={fmtVal(stats?.min, DECIMALS[metric])} unit={metricCfg.unit} last />
         </div>
       )}
-      {ts?.unit_notes && (
-        <div className="mono" style={{ fontSize: 9.5, color: 'var(--t-lo)', marginTop: 8, lineHeight: 1.5 }}>
-          {ts.unit_notes}
+
+      {/* QC 범례 — 관측기관 + AI, 한 줄로 압축 표기(색 분리 유지 — 신뢰 표기) */}
+      {!loading && !error && points.length > 0 && (
+        <div style={{ marginTop: 9, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 12, fontSize: 13, color: 'var(--t-lo)' }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+            <span style={{ width: 7, height: 7, borderRadius: '50%', background: QC_INST_HEX, flexShrink: 0 }} />
+            관측기관 QC{ts?.qc_summary.checked ? ` · ${ts.qc_summary.flagged_count}건` : ''}
+          </span>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+            <span style={{ width: 6, height: 6, borderRadius: '50%', background: QC_AI_HEX, flexShrink: 0 }} />
+            AI 이상감지{ts?.qc_summary.ai_spike_count != null ? ` · ${ts.qc_summary.ai_spike_count}건` : ''}
+          </span>
+        </div>
+      )}
+
+      {/* 데이터 성격 caveat — 신뢰 표기라 의미는 유지하되(§12) 내부 API명·경로 잔여어를 없애고
+          짧게, 별도 줄·저채도로 분리한다. */}
+      {!loading && !error && points.length > 0 && (isDaily || (ts && !ts.qc_summary.checked)) && (
+        <div style={{ marginTop: 4, display: 'flex', flexDirection: 'column', gap: 2 }}>
+          {isDaily && <div style={{ fontSize: 13, color: 'var(--t-lo)' }}>· 일 단위 관측(파고부이)</div>}
+          {ts && !ts.qc_summary.checked && <div style={{ fontSize: 13, color: 'var(--t-lo)' }}>· 기관 QC 미제공 구간</div>}
         </div>
       )}
     </Section>
   )
 }
 
-function ChartTooltip({ active, payload, label, unit, metricLabel }: {
+function StatCell({ label, value, unit, last }: { label: string; value: string; unit: string; last?: boolean }) {
+  return (
+    <div style={{ flex: 1, textAlign: 'center', padding: '9px 6px', borderRight: last ? 'none' : '1px solid var(--line)' }}>
+      <div className="eyebrow" style={{ marginBottom: 4, fontSize: 13 }}>{label}</div>
+      <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--t-hi)' }}>
+        {value}<span style={{ fontSize: 13, fontWeight: 500, color: 'var(--t-lo)', marginLeft: 2 }}>{unit}</span>
+      </div>
+    </div>
+  )
+}
+
+function ChartTooltip({ active, payload, label, unit, metricLabel, decimals }: {
   active?: boolean
-  payload?: { value?: number | null; payload: TimeseriesPoint }[]
+  payload?: { payload: ChartRow }[]
   label?: string
   unit: string
   metricLabel: string
+  decimals: number
 }) {
   if (!active || !payload || !payload.length) return null
-  const entry = payload[0]
-  const point = entry.payload
+  const row = payload[0].payload
+  const val = row.obs ?? row.fc
+  if (val == null) return null
+  const isForecast = row.obs == null && row.fc != null
   return (
-    <div style={{ background: 'var(--bg-elev)', border: '1px solid var(--line)', borderRadius: 6,
-      padding: '8px 10px', boxShadow: 'var(--shadow-md)' }}>
-      <div className="mono" style={{ fontSize: 10.5, color: 'var(--t-lo)', marginBottom: 4 }}>{label}</div>
-      <div className="mono" style={{ fontSize: 13, fontWeight: 600, color: 'var(--t-hi)' }}>
-        {metricLabel} {entry.value != null ? Number(entry.value).toFixed(1) : '-'}
-        <span style={{ fontSize: 10.5, fontWeight: 500, color: 'var(--t-lo)', marginLeft: 3 }}>{unit}</span>
+    <div style={{ background: 'var(--bg-panel)', border: '1px solid var(--border-strong)', borderRadius: 7,
+      padding: '8px 11px', boxShadow: 'var(--shadow-overlay)' }}>
+      <div className="tnum" style={{ fontSize: 13, fontWeight: 700, color: 'var(--t-hi)', whiteSpace: 'nowrap' }}>
+        {fullDt(label ?? row.t)}
+        <span style={{ color: 'var(--t-lo)', fontWeight: 500 }}> · {metricLabel} </span>
+        {val.toFixed(decimals)}
+        <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--t-lo)', marginLeft: 2 }}>{unit}</span>
+        {isForecast && <span style={{ color: FORECAST_HEX, fontWeight: 700, marginLeft: 4 }}>예측</span>}
       </div>
-      {point?.qc.flagged && (
-        <div style={{ fontSize: 10, color: 'var(--lost)', marginTop: 4 }}>● QC 플래그(관측기관)</div>
+      {isForecast && row.fcLower != null && row.fcWidth != null && row.fcWidth > 0 && (
+        <div className="tnum" style={{ fontSize: 13, color: 'var(--t-lo)', marginTop: 3 }}>
+          불확실성 밴드 {row.fcLower.toFixed(decimals)}–{(row.fcLower + row.fcWidth).toFixed(decimals)}{unit}
+        </div>
       )}
+      {row.qcFlag && <div style={{ fontSize: 13, color: QC_INST_HEX, marginTop: 4, fontWeight: 600 }}>● 관측기관 QC 플래그</div>}
+      {row.aiSpike && <div style={{ fontSize: 13, color: QC_AI_HEX, marginTop: 2, fontWeight: 600 }}>◆ AI 이상감지(스파이크)</div>}
     </div>
   )
 }
 
 function Chip({ active, onClick, children }: { active: boolean; onClick: () => void; children: ReactNode }) {
   return (
-    <button onClick={onClick} className="mono" style={{
-      padding: '5px 10px', borderRadius: 5, cursor: 'pointer', fontSize: 11.5, fontWeight: 500,
+    <button onClick={onClick} className="tnum" style={{
+      padding: '6px 11px', borderRadius: 6, cursor: 'pointer', fontSize: 13, fontWeight: 600,
       border: `1px solid ${active ? 'var(--accent-dim)' : 'var(--line)'}`,
       background: active ? 'var(--accent-50)' : 'transparent',
       color: active ? 'var(--accent-h)' : 'var(--t-mid)',
@@ -361,11 +697,65 @@ function Chip({ active, onClick, children }: { active: boolean; onClick: () => v
   )
 }
 
-function EmptyState({ text }: { text: string }) {
+function EmptyState({ title, sub }: { title: string; sub: string }) {
   return (
-    <div style={{ height: 220, display: 'flex', alignItems: 'center', justifyContent: 'center',
-      color: 'var(--t-lo)', fontSize: 12.5, textAlign: 'center', padding: '0 20px' }}>
-      {text}
+    <div style={{ height: 260, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+      gap: 5, textAlign: 'center', padding: '0 24px' }}>
+      <div style={{ fontSize: 14.5, fontWeight: 700, color: 'var(--t-mid)' }}>{title}</div>
+      <div style={{ fontSize: 13, color: 'var(--t-lo)', lineHeight: 1.5 }}>{sub}</div>
+    </div>
+  )
+}
+
+// ── 지점 제원(연구용 계측기 메타 — 맨 아래) ────────────────────────────────
+const SPEC_SHORT_LABEL: Record<string, string> = {
+  wind_sensor_height_m: '풍속·풍향계 설치고',
+  air_temp_sensor_height_m: '기온계 설치고',
+  pressure_sensor_height_m: '기압계 설치고',
+  water_temp_sensor_depth_m: '수온계 설치 수심',
+  wave_sensor_height_m: '파고계 설치 위치',
+}
+const SPEC_ORDER = ['wind_sensor_height_m', 'water_temp_sensor_depth_m', 'wave_sensor_height_m', 'air_temp_sensor_height_m', 'pressure_sensor_height_m']
+
+function SpecsBlock({ station, buoy }: { station: StationMeta | null; buoy: MergedBuoy }) {
+  const specs = station?.specs ?? null
+  const specValue = (key: string): string | undefined => {
+    const f = specs?.[key]
+    if (!f || f.value_m == null) return undefined
+    const secondary = f.secondary_value_m != null ? ` / ${f.secondary_value_m}` : ''
+    const depth = f.below_surface ? ' (수면 아래)' : ''
+    return `${f.value_m}${secondary} m${depth}`
+  }
+
+  return (
+    <Section title="지점 제원">
+      {/* '발행기관' 셀 제거(§12) — 헤더 Source 태그와 중복 */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 9 }}>
+        <SpecCell label="부이형식" value={station?.form} />
+        <SpecCell label="지점코드" value={station?.stn_id ?? buoy.id} />
+        <SpecCell label="관측개시일" value={station?.obs_start_date} />
+        {specs
+          ? SPEC_ORDER.filter(k => specs[k]).map(k => (
+            <SpecCell key={k} label={SPEC_SHORT_LABEL[k]} value={specValue(k)} />
+          ))
+          : <SpecCell label="센서 제원" value={undefined} />}
+        <SpecCell label="정밀 좌표" value={`${buoy.lat.toFixed(4)}°N, ${buoy.lon.toFixed(4)}°E`} />
+      </div>
+    </Section>
+  )
+}
+
+/** 값이 없으면 "—" 로 명시(지어낸 값 금지 — platform_benchmarks.md Q4/NDBC "MM" 관행). */
+function SpecCell({ label, value }: { label: string; value?: string | null }) {
+  const empty = !value || value === '-'
+  return (
+    <div style={{ background: 'var(--bg-elev)', border: '1px solid var(--line)', borderRadius: 6, padding: '9px 11px', boxShadow: 'var(--edge-hi)' }}>
+      <div className="eyebrow" style={{ marginBottom: 4 }}>{label}</div>
+      {empty ? (
+        <div style={{ fontSize: 13.5, fontWeight: 500, color: 'var(--t-lo)' }}>—</div>
+      ) : (
+        <div className="tnum" style={{ fontSize: 14, fontWeight: 700, color: 'var(--t-hi)' }}>{value}</div>
+      )}
     </div>
   )
 }

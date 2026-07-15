@@ -295,3 +295,54 @@ def fetch_list_table(op: str, year: int, month: int) -> list[dict]:
     if not data:
         return []
     return _find_info_list(data)
+
+
+# ── typ02 openApi 일별 통계(getDailyWaveBuoy) — 파고부이(C) 과거 이력 대체경로 ──────────────
+# (Wave 3a Fix 2) kma_buoy2.php 는 C타입(파고부이)을 지원하지 않는다(실측, docs/historical_data_probe.md
+# §1-3 · docs/apihub_catalog_probe.md §B). 같은 authKey 로 이미 활성화된 getDailyWaveBuoy
+# (station+year+month, 일별 유의파고/최대파고/파주기/평균수온)가 유일한 공식 대체경로 — 신규 신청 불필요.
+
+def _get_daily_json(op: str, year: int, month: int, station: str) -> Optional[dict]:
+    """일별 통계(getDailyBuoy/getDailyWaveBuoy 등) JSON 캐시 조회. station 파라미터 필수(전지점 일괄 불가).
+    미발간 월(`resultCode != 00`, 예: "발간되지 않은 기간입니다")은 캐시하지 않고 None."""
+    key = ("daily", op, year, month, station)
+    now = time.time()
+    with _CACHE_LOCK:
+        hit = _CACHE.get(key)
+        if hit and now - hit[0] < _TTL_LIST_TABLE:
+            return hit[1]
+
+    params = {
+        "authKey": require_kma_key(),
+        "pageNo": 1,
+        "numOfRows": 40,  # 한 달 최대 31일 + 상순/중순/하순/월 요약 4행 여유
+        "dataType": "JSON",
+        "year": year,
+        "month": month,
+        "station": station,
+    }
+    try:
+        resp = _throttled_get(f"{KMA_LIST_BASE}/{op}", params)
+        data = resp.json()
+    except Exception:
+        return None
+
+    result_code = data.get("response", {}).get("header", {}).get("resultCode")
+    if result_code != "00":
+        return None
+    with _CACHE_LOCK:
+        _CACHE[key] = (time.time(), data)
+    return data
+
+
+def fetch_daily_wave_buoy(station: str, year: int, month: int) -> list[dict]:
+    """파고부이(C) 일별 통계(getDailyWaveBuoy) — kma_buoy2.php 가 지원 안 하는 C타입 과거 이력의
+    유일한 확인된 공식 경로(docs/apihub_catalog_probe.md §B, 2026-07-15 실측 확인).
+
+    반환 행에는 일자별 실측(`tm`=일자 "01".."31") 뿐 아니라 상순/중순/하순/월 요약행도 섞여 있다 —
+    호출부(timeseries.py)가 `tm.isdigit()` 로 일자별 행만 골라 쓴다. 미발간 월(발간지연 ~1.5개월,
+    관측 시작월 이전)은 빈 리스트."""
+    data = _get_daily_json("getDailyWaveBuoy", year, month, station)
+    if not data:
+        return []
+    return _find_info_list(data)

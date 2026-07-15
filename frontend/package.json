@@ -9,7 +9,6 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@fontsource/ibm-plex-mono": "^5.2.7",
     "dayjs": "^1.11.13",
     "maplibre-gl": "^5.24.0",
     "pretendard": "^1.3.9",

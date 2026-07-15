@@ -5,14 +5,42 @@ KMA(sea_obs 좌표 + list-table 제원)와 KHOA(odcloud 부이 목록)를 병합
 
 스코프: 부이만(KMA TP B/C, KHOA 해양관측부이 41). 조위관측소·기타 TP(D/L/N/F/J)는 제외.
 지점 메타(제원)는 변동이 거의 없으므로 프로세스 캐시(TTL 길게)로 재계산 비용을 줄인다.
+
+**KHOA 41개소 중 실제 관측부이만 남긴다(Wave 3a Fix 1)** — 이름에 "등부표"가 들어간 항법보조시설
+(유도등부표 등, 예: YS_0002/YS_0003)은 무조건 제외하고, 라이브 캐시(twRecent)와 관측개시일 메타
+(pointDetail.do) **둘 다** 무데이터인 지점(무데이터/폐국)만 등록부에서 뺀다(둘 중 하나만 봐선 안
+되는 이유는 `_khoa_stations()` 독스트링의 KG_0028 실측 사례 참고 — twRecent 일시 공백을 무데이터로
+오판할 수 있다). 이전에 있던 `_khoa_missing_item()`(무데이터 지점을 "미수신"으로 명시 표출하던
+main.py 헬퍼)은 이 등록부 필터링에 따라 폐기됐다 — 이제 **미수신**은 실제 관측부이가 자기 관측주기
+대비 늦어진 것만 의미한다(항법보조시설 잡음 아님).
+
+## 센서고(`specs`) 정규화 — 왜 필요한가
+
+KMA list-table(`getBuoyLstTbl`/`getWaveBuoyLstTbl`) 이 주는 `ht_wd`/`ht_ta`/`ht_pa`/`ht_tw`/
+`ht_wh` 는 원문이 그대로 쓰기엔 위험하다(실측, 2026-07-15 `getBuoyLstTbl`):
+
+  - `ht_wd`(풍속·풍향계 설치고, m) 를 그대로 필드명 `wd` 로 노출하면 sea_obs 의 `wd`(풍향, °)와
+    이름이 겹쳐 프론트가 "풍향 8.34 m" 처럼 오표시한다 — **이 자체가 5인 전문가 리뷰가 지적한
+    신뢰도 파괴 사례**. → `wind_sensor_height_m` 처럼 "무엇의 높이인지" 이름에 명시한다.
+  - 값이 `"a/b"` 쌍으로 오는데(예: 대형 Discus 10m 부이 `서해170`: `ht_wd="8.34/8.34"`,
+    `ht_ta="8.64/8.64"`) 대부분은 이중 센서(1호기/2호기, `kma_buoy2.php` 의 WD1/WD2 와 대응)라
+    값이 다를 수 있지만(`울릉도`: `ht_wd="4.4/3.9"`), 같은 부이 여러 곳에서 **완전히 동일한 값이
+    중복**돼 그대로 노출하면 "8.34/8.34 m" 처럼 무의미하게 보인다 → 같으면 단일값으로 축약.
+  - `ht_tw`(수온계)·`ht_wh`(파고계)는 음수로 온다(해수면 **아래** 설치를 의미) — 부호만 보고는
+    "센서고 -1.2 m" 처럼 오해하기 쉽다 → 양수 "깊이"로 뒤집고 `below_surface` 플래그로 명시한다.
+  - `-99`/빈값/파싱불가는 결측이지 값이 아니다 → `None`(지어낸 숫자 반환 금지, `kma_marine`
+    전역 결측 규약과 동일하게 처리).
 """
 from __future__ import annotations
 
+import concurrent.futures
 import threading
 import time
+from typing import Optional
 
 import kma_marine
 import khoa_api
+import live_cache
 
 _CACHE: dict = {}
 _CACHE_LOCK = threading.Lock()
@@ -40,6 +68,82 @@ def _rows_for_latest_published_month(op: str, now, max_back: int = 12) -> list[d
             return rows
         year, month = (year, month - 1) if month > 1 else (year - 1, 12)
     return []
+
+
+def _parse_dual(raw) -> tuple[Optional[float], Optional[float]]:
+    """'a/b' 또는 단일값 문자열 → (대표값, 보조값|None).
+
+    - 두 값이 같으면(부동소수 오차 감안) 이중센서 중복으로 보고 단일값으로 축약한다
+      (예: `"8.34/8.34"` → `(8.34, None)` — "8.34/8.34 m" 처럼 중복 노출 금지).
+    - 값이 다르면 이중센서(1호기/2호기)로 보고 둘 다 보존한다(예: `"4.4/3.9"` → `(4.4, 3.9)`).
+    - `-99`(KMA 결측 센티널)·빈값·파싱불가는 결측으로 버린다(None) — 지어낸 값을 반환하지 않는다.
+    """
+    if raw is None:
+        return None, None
+    s = str(raw).strip()
+    if not s or s.lower() == "null":
+        return None, None
+    vals: list[float] = []
+    for part in s.split("/"):
+        part = part.strip()
+        if not part:
+            continue
+        try:
+            v = float(part)
+        except ValueError:
+            continue
+        if abs(v - kma_marine.MISSING) < 1e-6 or v <= -99.0:  # 결측 센티널(-99) — 실측 음수 수심과 구분
+            continue
+        vals.append(v)
+    if not vals:
+        return None, None
+    if len(vals) == 1:
+        return vals[0], None
+    a, b = vals[0], vals[1]
+    if abs(a - b) < 1e-6:
+        return a, None
+    return a, b
+
+
+def _above_surface_spec(raw, label: str) -> dict:
+    """해수면 **위** 설치고 필드(풍속·풍향계/기온계/기압계). 값은 부호 그대로(양수) 노출한다."""
+    primary, secondary = _parse_dual(raw)
+    return {"value_m": primary, "secondary_value_m": secondary, "unit": "m", "label": label}
+
+
+def _below_surface_spec(raw, label: str) -> dict:
+    """해수면 **기준** 설치 위치(수온계 수심·파고계). 원본 부호(-)=해수면 아래를 양수 '깊이' +
+    `below_surface` 플래그로 변환한다 — "-1.2 m" 처럼 부호만으로 오해를 부르는 표기를 없앤다."""
+    primary, secondary = _parse_dual(raw)
+    if primary is None:
+        return {"value_m": None, "secondary_value_m": None, "below_surface": None, "unit": "m", "label": label}
+    return {
+        "value_m": abs(primary),
+        "secondary_value_m": abs(secondary) if secondary is not None else None,
+        "below_surface": primary < 0,
+        "unit": "m",
+        "label": label,
+    }
+
+
+_SPEC_LABELS = {
+    "wind": "풍속·풍향계 설치고(해수면 기준 높이 — 값은 풍향이 아니라 센서 부착 높이)",
+    "air_temp": "기온계 설치고(해수면 기준 높이)",
+    "pressure": "기압계 설치고(해수면 기준 높이)",
+    "water_temp": "수온계 설치 수심(해수면 아래, below_surface=true 면 수중)",
+    "wave": "파고계 설치 위치(해수면 기준, below_surface=true 면 수면 아래)",
+}
+
+
+def _station_specs(spec: dict) -> dict:
+    """list-table 원문 `ht_*` → 프론트가 그대로 신뢰해 렌더할 수 있는 정규화 제원."""
+    return {
+        "wind_sensor_height_m": _above_surface_spec(spec.get("ht_wd"), _SPEC_LABELS["wind"]),
+        "air_temp_sensor_height_m": _above_surface_spec(spec.get("ht_ta"), _SPEC_LABELS["air_temp"]),
+        "pressure_sensor_height_m": _above_surface_spec(spec.get("ht_pa"), _SPEC_LABELS["pressure"]),
+        "water_temp_sensor_depth_m": _below_surface_spec(spec.get("ht_tw"), _SPEC_LABELS["water_temp"]),
+        "wave_sensor_height_m": _below_surface_spec(spec.get("ht_wh"), _SPEC_LABELS["wave"]),
+    }
 
 
 def _build_kma_spec_index() -> dict:
@@ -91,21 +195,64 @@ def _kma_stations() -> list[dict]:
             "lon": o["lon"],
             "lat": o["lat"],
             "form": spec.get("form"),
-            "sensor_heights": {
-                "wd": spec.get("ht_wd"),
-                "ta": spec.get("ht_ta"),
-                "pa": spec.get("ht_pa"),
-                "tw": spec.get("ht_tw"),
-                "wh": spec.get("ht_wh"),
-            },
+            "specs": _station_specs(spec),
         })
     return out
 
 
+# 항법보조시설(유도등부표/등부표) — 관측부이가 아니라 위치표시용 등부표라 twRecent 가 관측값을
+# 반환하지 않는다(사용자 실측 보고: "여수해만중앙A호유도등부표" 등이 미수신·수신이력없음으로 표출).
+# 이름에 "등부표"가 들어가면 제외(예: YS_0002/YS_0003 "여수해만중앙A/C호유도등부표"). 같은 YS_ 접두사여도
+# YS_0007 "여수기상관측부이"는 이름에 매칭되지 않아 정상 포함된다(실제 관측부이이므로 정당).
+_NAV_AID_NAME_MARKER = "등부표"
+
+
 def _khoa_stations() -> list[dict]:
+    """KHOA 41개소 목록에서 **실제 관측부이만** 남긴다(Wave 3a Fix 1, 사용자 명시 요구사항).
+
+    두 단계로 제외한다:
+      1) 이름에 `_NAV_AID_NAME_MARKER`(등부표) 포함 — 항법보조시설(관측부이 아님). 무조건 제외.
+      2) 아래 **두 독립 신호가 모두** 무데이터인 지점만 제외한다:
+         a) 라이브 캐시(`live_cache`)가 최소 1회 이상 갱신된 뒤에도 그 지점이 한 번도 twRecent 응답에
+            잡힌 적 없음 — `get_khoa_snapshot()` 은 한 번 성공하면 이후 실패해도 마지막 값을 계속
+            보존하므로(live_cache.py 참고), "지금 스냅샷에 없다" ≈ "이번 프로세스 구동 이후 단 한 번도
+            관측값을 반환한 적 없다".
+         b) oceangrid `pointDetail.do`(관측개시일 등 정적 메타, twRecent 와 별개 채널)에서도
+            관측개시일을 못 얻음.
+         **실측 근거**: KG_0028(국가해양관측망 심해부이, 공식 "품질 최적" 6개소 중 하나)이 twRecent 만
+         일시적으로 비어 있는 순간이 실측 확인됐다(twRecent 는 None, 그러나 pointDetail 은
+         obs_start_date='2012-09-08' 정상 반환) — twRecent 신호 하나만 보면 14년 이력의 정상 관측소를
+         일시적 API 공백 때문에 "무데이터"로 오판해 등록부에서 지워버리는 사고가 난다. 두 신호 모두
+         무데이터일 때만 제외해 이런 오판을 피한다(그래도 실제 무데이터 항법보조/폐국 지점은 여전히
+         걸러짐 — 예: YS_0002/YS_0003 은 이름으로 이미 제외, YS_0007 은 두 신호 다 없어 제외).
+    서버 기동 직후(첫 KHOA burst 완료 전, `khoa_at is None`)에는 a)를 건너뛰어(전부 포함) 부팅 경합으로
+    등록부가 빈 채로 굳어버리는 것을 방지한다 — 다음 캐시 갱신(get_stations TTL 1시간) 때 다시 걸러진다.
+    """
     buoys = khoa_api.fetch_buoy_list()
+    khoa_snap, khoa_at = live_cache.get_khoa_snapshot()
+    named_candidates = [b for b in buoys if _NAV_AID_NAME_MARKER not in (b.get("name") or "")]
+
+    # 관측개시일 등 정적 메타(Fix 4 + 위 무데이터 이중신호) — oceangrid pointDetail.do, 지점당 1회
+    # POST(장기 캐시) 병렬 조회. twRecent 와 독립된 채널이라 무데이터 판정의 두 번째 신호로도 쓴다.
+    details: dict[str, dict] = {}
+    if named_candidates:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as ex:
+            futs = {ex.submit(khoa_api.fetch_station_detail, b["id"]): b["id"] for b in named_candidates}
+            for fut in concurrent.futures.as_completed(futs):
+                details[futs[fut]] = fut.result()
+
+    candidates: list[dict] = []
+    for b in named_candidates:
+        obs_code = b["id"]
+        has_live = khoa_at is None or obs_code in khoa_snap
+        has_obs_start = bool((details.get(obs_code) or {}).get("obs_start_date"))
+        if not has_live and not has_obs_start:
+            continue  # 두 신호 모두 무데이터 — 실제 무데이터/폐국 지점
+        candidates.append(b)
+
     out: list[dict] = []
-    for b in buoys:
+    for b in candidates:
+        detail = details.get(b["id"]) or {}
         out.append({
             "source": "KHOA",
             "id": b["id"],
@@ -118,7 +265,8 @@ def _khoa_stations() -> list[dict]:
             "lon": b.get("lon"),
             "lat": b.get("lat"),
             "form": None,
-            "sensor_heights": None,
+            "obs_start_date": detail.get("obs_start_date"),  # 관측개시일(비공식 경로 실측, 없으면 None)
+            "specs": None,  # KHOA 는 센서고 제원 API 미제공(스코프 제외) — KMA 만 specs 채움
         })
     return out
 

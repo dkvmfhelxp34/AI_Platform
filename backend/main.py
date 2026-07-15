@@ -13,12 +13,14 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 
+import chat as chat_mod
 import config
 import kma_marine
 import live_cache
+import live_snapshot
 import stations as stations_mod
-import status as status_mod
 import timeseries as timeseries_mod
 import forecast as forecast_mod
 
@@ -45,90 +47,10 @@ app.add_middleware(
 )
 
 
-# ── /api/live 레코드 변환 헬퍼 ────────────────────────────────────────────────
-
-def _fmt_kma_tm(tm: str) -> str | None:
-    """'YYYYMMDDHHMI' → 'YYYY-MM-DD HH:MM' (KHOA obsrvnDt 와 표시 포맷 통일)."""
-    if not tm or len(tm) != 12:
-        return tm
-    return f"{tm[0:4]}-{tm[4:6]}-{tm[6:8]} {tm[8:10]}:{tm[10:12]}"
-
-
-def _kma_live_item(o: dict, now) -> dict:
-    st = status_mod.classify(o["tm"], now, source="KMA")
-    return {
-        "source": "KMA",
-        "id": o["id"],
-        "name": o["name"],
-        "lon": o["lon"],
-        "lat": o["lat"],
-        "tp": o["tp"],
-        "tp_label": o["tp_label"],
-        "obs_time": _fmt_kma_tm(o["tm"]),
-        "status": st["status"].value,
-        "minutes_since": st["minutes_since"],
-        "values": {
-            "wave_height": o["wh"],
-            "wind_dir": o["wd"],
-            "wind_speed": o["ws"],
-            "wind_gust": o["ws_gst"],
-            "water_temp": o["tw"],
-            "air_temp": o["ta"],
-            "pressure": o["pa"],
-            "humidity": o["hm"],
-        },
-    }
-
-
-def _khoa_live_item(obs_code: str, rec: dict, now) -> dict:
-    st = status_mod.classify(rec.get("obsrvnDt"), now, source="KHOA")
-    return {
-        "source": "KHOA",
-        "id": obs_code,
-        "name": rec.get("obsvtrNm"),
-        "lon": rec.get("lot"),  # KHOA 응답 필드명 lot=경도 (오타 아님, API 원 필드명)
-        "lat": rec.get("lat"),
-        "tp": obs_code.split("_")[0],
-        "tp_label": "해양관측부이",
-        "obs_time": rec.get("obsrvnDt"),
-        "status": st["status"].value,
-        "minutes_since": st["minutes_since"],
-        "values": {
-            "wave_height": rec.get("wvhgt"),
-            "wave_period": rec.get("wvpd"),
-            "wind_dir": rec.get("wndrct"),
-            "wind_speed": rec.get("wspd"),
-            "wind_gust": rec.get("maxMmntWspd"),
-            "water_temp": rec.get("wtem"),
-            "air_temp": rec.get("artmp"),
-            "pressure": rec.get("atmpr"),
-            "current_dir": rec.get("crdir"),
-            "current_speed_cms": rec.get("crsp"),
-            "salinity": rec.get("slnty"),
-        },
-    }
-
-
-def build_live_snapshot() -> list[dict]:
-    """`live_cache.py` 백그라운드 스냅샷을 읽어 상태만 **현재시각 기준**으로 매 요청 재계산한다.
-
-    외부 API 호출 0회(스냅샷 갱신은 백그라운드 데몬 스레드가 전담) — 요청 빈도가 아무리 높아도
-    KMA/KHOA 호출량은 늘지 않는다. 상세는 `live_cache.py` 모듈독스트링(Rate budget 계산 포함).
-    """
-    now = kma_marine.now_kst()
-    out: list[dict] = []
-
-    kma_obs, _kma_at = live_cache.get_kma_snapshot()
-    for o in kma_obs:
-        if o["tp"] not in ("B", "C"):
-            continue
-        out.append(_kma_live_item(o, now))
-
-    khoa_obs, _khoa_at = live_cache.get_khoa_snapshot()
-    for obs_code, rec in khoa_obs.items():
-        out.append(_khoa_live_item(obs_code, rec, now))
-
-    return out
+# ── /api/live 스냅샷·상태 집계 ────────────────────────────────────────────────
+# 실제 구현은 live_snapshot.py 로 이전(Phase 5) — main.py(/api/live·/api/status)와
+# chat.py(챗봇 도구)가 동일 계산을 공유해 "화면과 챗봇 답이 다른" 불일치를 막는다.
+build_live_snapshot = live_snapshot.build_live_snapshot
 
 
 # ── 라우트 ────────────────────────────────────────────────────────────────
@@ -144,6 +66,30 @@ def api_stations():
     return {"count": len(items), "items": items}
 
 
+@app.get("/api/station/{station_id}")
+def api_station_detail(station_id: str):
+    """지점 상세(Wave 3b 상세패널용) — `/api/stations` 와 같은 정규화 레코드 1건.
+    id 예: KMA_22101(KMA) 또는 KG_0024(KHOA obsCode 그대로).
+
+    `available_metrics`(§14 지표 탭 동적화): 라이브 스냅샷에서 이 지점을 찾아 그 값을 그대로
+    싣는다(live_snapshot.available_metrics — 라이브 존재분 + 부이종류 capability 보강). 라이브
+    스냅샷에 아직 없는 지점(부팅 직후 등)은 라이브값 없이(전부 결측으로 간주) 같은 규칙으로
+    폴백 계산한다.
+    """
+    items = stations_mod.get_stations()
+    match = next((s for s in items if s["id"] == station_id), None)
+    if match is None:
+        return {"error": "station not found", "id": station_id}
+
+    result = dict(match)
+    live_item = next((it for it in build_live_snapshot() if it["id"] == station_id), None)
+    if live_item is not None:
+        result["available_metrics"] = live_item["available_metrics"]
+    else:
+        result["available_metrics"] = live_snapshot.available_metrics(match.get("source"), match.get("tp"), {})
+    return result
+
+
 @app.get("/api/live")
 def api_live():
     items = build_live_snapshot()
@@ -152,43 +98,43 @@ def api_live():
 
 @app.get("/api/status")
 def api_status():
-    """부이별 수신상태 집계(정상/지연/미수신, 소스별) + 라이브 캐시 신선도(디버그용).
+    """부이별 수신상태 집계(정상/지연/미수신, 소스별) + freshness/운영 KPI 집계(Fix 3).
 
-    `build_live_snapshot()`(외부 호출 0회)를 그대로 재사용 — `/api/live` 와 동일한 데이터를
-    소스별/상태별 카운트로 요약한다.
+    실제 계산은 `live_snapshot.build_status_overview()` 로 이전(Phase 5) — chat.py 의
+    `get_status_overview` 도구가 같은 함수를 호출하므로, 챗봇 답변과 이 응답은 항상 같은 숫자다.
+
+    **SSOT**: `data_freshness` 는 items 의 `minutes_since`(= status.classify() 가 상태 판정에 실제
+    쓴 값, status.py §SSOT)에서 뽑는다. 헤더 live 배지·KPI "최근 갱신"·리스트의 "N분 전"이 전부
+    이 하나의 계산 결과를 읽으면, "40분 전인데 정상"류 모순이 구조적으로 발생할 수 없다.
     """
-    items = build_live_snapshot()
-    total: dict[str, int] = {}
-    by_source: dict[str, dict[str, int]] = {}
-    for it in items:
-        src, st = it["source"], it["status"]
-        total[st] = total.get(st, 0) + 1
-        by_source.setdefault(src, {})[st] = by_source.setdefault(src, {}).get(st, 0) + 1
-
-    kma_snap, kma_at = live_cache.get_kma_snapshot()
-    khoa_snap, khoa_at = live_cache.get_khoa_snapshot()
-    now = time.time()
-    return {
-        "count": len(items),
-        "total": total,
-        "by_source": by_source,
-        "cache": {
-            "kma_count": len(kma_snap),
-            "kma_age_sec": round(now - kma_at, 1) if kma_at else None,
-            "khoa_count": len(khoa_snap),
-            "khoa_age_sec": round(now - khoa_at, 1) if khoa_at else None,
-        },
-    }
+    return live_snapshot.build_status_overview()
 
 
 @app.get("/api/timeseries")
-def api_timeseries(source: str, id: str, hours: int = 24):
-    """상세 패널 시계열. source=KMA|KHOA, id=지점 id(KMA_22101 또는 KHOA obsCode), hours=조회 시간(≤48)."""
+def api_timeseries(
+    source: str, id: str, hours: int = 24, range: str | None = None, days: int | None = None,
+    metric: str = "wave",
+):
+    """상세 패널 시계열. source=KMA|KHOA, id=지점 id(KMA_22101 또는 KHOA obsCode).
+
+    조회 범위(Wave 3a Fix 2, 연구용 과거 이력):
+      - `range`=24h|7d|30d|1y 또는 `days`=N 을 주면 과거 이력 경로(둘 중 하나만 있어도 됨, `days` 우선).
+      - 둘 다 생략하면 레거시 `hours`(≤48) 그대로(기존 동작 호환).
+    KMA B(해양기상부이)=kma_buoy2.php 30분 해상도, KMA C(파고부이)=getDailyWaveBuoy 일별 대체.
+    KHOA=oceangrid day-loop(~30일 캡) + twRecent 최근 롤링 보강. 상세는 `timeseries.py` 모듈독스트링.
+
+    `metric`(wave|water_temp|wind_speed|pressure, 기본 wave): 알고리즘 AI-QC(`qc.run_qc`)가
+    어느 지표를 대상으로 스파이크/결측을 판정할지 결정한다. 프론트가 지표 탭을 바꿀 때 이
+    파라미터를 함께 보내면, 탭마다 그 지표 기준 AI 이상감지가 반영된다(생략 시 기존처럼 wave
+    기준 — 하위호환).
+    """
     src = source.upper().strip()
     if src not in ("KMA", "KHOA"):
         return {"error": "source must be KMA or KHOA"}
+    if metric not in forecast_mod.METRIC_META:
+        return {"error": f"metric must be one of {list(forecast_mod.METRIC_META)}"}
 
-    result = timeseries_mod.get_timeseries(src, id, hours)
+    result = timeseries_mod.get_timeseries(src, id, hours, range_=range, days=days, metric=metric)
     if result is None:
         return {"error": "no data"}
 
@@ -242,6 +188,17 @@ def api_forecast(source: str, id: str, metric: str = "wave", hours: int = 24):
     with _FORECAST_CACHE_LOCK:
         _FORECAST_CACHE[cache_key] = (time.time(), result)
     return result
+
+
+# ── /api/chat (Phase 5) — 데이터 그라운디드 AI 챗봇, SSE. 실제 로직은 chat.py(claude -p CLI 전용:
+# 도구루프·시스템프롬프트·세션기억·jsonl 로그)에 있고, 여기서는 SSE 응답으로 감싸기만 한다.
+@app.post("/api/chat")
+async def api_chat(req: chat_mod.ChatRequest):
+    return StreamingResponse(
+        chat_mod.generate_chat_response(req),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 # ── SPA(dist) 정적 서빙 — Phase 1 이후 frontend/dist 가 생기면 자동 반영.

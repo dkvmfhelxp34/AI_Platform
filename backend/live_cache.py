@@ -14,17 +14,23 @@
 (freshness 판정은 항상 최신, 외부 API 호출량은 요청 빈도와 완전히 분리됨).
 
 - KMA: `kma_marine.fetch_sea_obs()` 1회 호출 = 186개 지점(B/C 포함) 전체 → 5분마다 갱신.
-- KHOA: 41개소를 `khoa_api.fetch_tw_recent()` 로 burst 순회(호출 간 간격은 khoa_api.py 자체
+- KHOA: 41개소를 `khoa_api.fetch_tw_recent_series()` 로 burst 순회(호출 간 간격은 khoa_api.py 자체
   throttle(`_MIN_INTERVAL=0.15초`)로 이미 제한됨 → burst 1회 ≈ 41*0.15s ≈ 6초) → burst 를 10분마다 반복.
+  `_series()` 는 `fetch_tw_recent()` 와 **같은 네트워크 호출·캐시키**를 쓰므로(khoa_api.py 참고),
+  호출 횟수를 늘리지 않고도 최신값 + 롤링 이력을 함께 얻어 지점별 실측 관측주기(cadence, 연속
+  관측 간격의 중앙값)를 계산할 수 있다 — `status.py` 의 cadence 기반 판정(Fix 1)이 이 값을 쓴다
+  (`cadence_min_observed`, 없으면 status.py 의 접두사 기본값으로 폴백).
 
 Rate budget (일일 KHOA twRecent 호출량, 서비스 한도 10,000건/일):
   41개소 × (24h * 60min / 10min 주기) = 41 × 144 = 5,904 건/일  < 10,000/일  (여유 ≈ 41%)
-  (실제로는 burst 자체가 몇 초 걸리므로 주기가 10분보다 살짝 길어 이보다 더 적게 소모된다.)
+  (실제로는 burst 자체가 몇 초 걸리므로 주기가 10분보다 살짝 길어 이보다 더 적게 소모된다.
+   `fetch_tw_recent_series()` 로 바뀌어도 호출 1회당 응답은 동일 — 이 예산에 변화 없음.)
 """
 from __future__ import annotations
 
 import threading
 import time
+from datetime import datetime
 from typing import Optional
 
 import kma_marine
@@ -54,9 +60,32 @@ def get_kma_snapshot() -> tuple[list[dict], Optional[float]]:
 
 
 def get_khoa_snapshot() -> tuple[dict[str, dict], Optional[float]]:
-    """({obsCode: twRecent 최신레코드}, 마지막 갱신 unix time) — 갱신 전이면 ({}, None)."""
+    """({obsCode: twRecent 최신레코드(+cadence_min_observed)}, 마지막 갱신 unix time) — 갱신 전이면 ({}, None)."""
     with _LOCK:
         return dict(_KHOA_SNAPSHOT), _KHOA_UPDATED_AT
+
+
+# ── cadence(관측주기) 실측 — status.py 의 cadence 기반 판정에 쓰인다 ────────────────────────
+
+def _median_gap_minutes(obs_times: list[str]) -> Optional[float]:
+    """'YYYY-MM-DD HH:MM' 문자열 리스트(오래된→최신 무관)에서 연속 관측 간격의 중앙값(분).
+
+    표본이 2개 미만이거나 전부 파싱 실패하면 None(호출부가 접두사 기본값으로 폴백)."""
+    dts: list[datetime] = []
+    for t in obs_times:
+        try:
+            dts.append(datetime.strptime(t, "%Y-%m-%d %H:%M"))
+        except (TypeError, ValueError):
+            continue
+    dts.sort()
+    gaps = [(b - a).total_seconds() / 60.0 for a, b in zip(dts, dts[1:])]
+    gaps = [g for g in gaps if g > 0]
+    if not gaps:
+        return None
+    gaps.sort()
+    n = len(gaps)
+    mid = n // 2
+    return gaps[mid] if n % 2 else (gaps[mid - 1] + gaps[mid]) / 2.0
 
 
 # ── 갱신 루프 ─────────────────────────────────────────────────────────────────
@@ -74,14 +103,21 @@ def _refresh_kma_once() -> None:
 
 
 def _refresh_khoa_once(obs_codes: list[str]) -> None:
+    """지점별 twRecent 를 burst 순회 — **롤링 시계열째로** 받아 최신레코드 + 실측 cadence 를
+    동시에 얻는다(`fetch_tw_recent_series` 가 `fetch_tw_recent` 와 같은 네트워크 호출·캐시키를
+    쓰므로 호출 1회로 둘 다 해결, 상태 판정용 별도 호출은 없다 — status.py §cadence 참고)."""
     global _KHOA_UPDATED_AT
     any_ok = False
     for code in obs_codes:
         try:
-            rec = khoa_api.fetch_tw_recent(code)
+            series = khoa_api.fetch_tw_recent_series(code)
         except Exception:
-            rec = None
-        if rec:
+            series = []
+        if series:
+            rec = dict(series[-1])  # 오래된→최신 정렬이므로 마지막이 최신(=fetch_tw_recent 와 동일)
+            cadence = _median_gap_minutes([r.get("obsrvnDt") for r in series])
+            if cadence is not None:
+                rec["cadence_min_observed"] = round(cadence, 1)
             with _LOCK:
                 _KHOA_SNAPSHOT[code] = rec
             any_ok = True

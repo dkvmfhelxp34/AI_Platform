@@ -32,7 +32,7 @@ export default class ErrorBoundary extends Component<{ children: ReactNode }, St
             onClick={() => { this.setState({ hasError: false }); window.location.reload() }}
             style={{
               padding: '9px 24px', borderRadius: 9, background: 'var(--accent)',
-              color: '#fff', border: 'none', cursor: 'pointer', fontSize: 14, fontWeight: 600,
+              color: 'var(--bg-deep)', border: 'none', cursor: 'pointer', fontSize: 14, fontWeight: 600,
             }}
           >
             페이지 새로고침

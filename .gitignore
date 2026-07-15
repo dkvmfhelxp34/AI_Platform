@@ -23,10 +23,10 @@ data/cache/
 # ── 대용량 원시 캡처(공개 데이터지만 kma_stations.txt 와 중복) ──
 docs/reference/sea_obs_full.txt
 
-# ── 내부 개발 문서 (공개 저장소 제외 — 타 사설 프로젝트/비공식 엔드포인트 참조 포함) ──
+# ── 내부 개발 문서 (공개 저장소 제외 — 타 사설 프로젝트/비공식 엔드포인트/키·스크래치패드 경로 참조 포함) ──
 CLAUDE.md
 PLAN.md
-docs/oceangrid_probe.md
+docs/*_probe.md
 docs/ui_revision_notes.md
 .ignore
 
