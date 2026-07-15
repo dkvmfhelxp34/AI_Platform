@@ -1,0 +1,36 @@
+# ── 시크릿 (절대 커밋 금지) ─────────────────────────────
+.env
+.env.*
+!.env.example
+
+# ── Python ──────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+backend/.venv/
+*.egg-info/
+
+# ── Node / 프론트 빌드 ──────────────────────────────────
+node_modules/
+frontend/node_modules/
+frontend/dist/
+frontend/tsconfig.tsbuildinfo
+
+# ── 런타임 산출물 ───────────────────────────────────────
+logs/
+data/cache/
+*.log
+
+# ── 대용량 원시 캡처(공개 데이터지만 kma_stations.txt 와 중복) ──
+docs/reference/sea_obs_full.txt
+
+# ── 내부 개발 문서 (공개 저장소 제외 — 타 사설 프로젝트/비공식 엔드포인트 참조 포함) ──
+CLAUDE.md
+PLAN.md
+docs/oceangrid_probe.md
+docs/ui_revision_notes.md
+.ignore
+
+# ── OS/에디터 ───────────────────────────────────────────
+.DS_Store
+.vscode/
+*.swp

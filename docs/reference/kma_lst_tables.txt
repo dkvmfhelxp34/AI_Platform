@@ -1,0 +1,1261 @@
+===== getBuoyLstTbl (year=2024 month=12) =====
+{
+    "response": {
+        "header": {
+            "resultCode": "00",
+            "resultMsg": "NORMAL_SERVICE"
+        },
+        "body": {
+            "dataType": "JSON",
+            "items": {
+                "item": [
+                    {
+                        "stn_buoy": {
+                            "info": [
+                                {
+                                    "form": "NOMAD 6\u00d73",
+                                    "stn_ko": "\uc6b8\ub989\ub3c4",
+                                    "stn_en": "Ulleungdo",
+                                    "ht_tw": "-1.2/-0.4",
+                                    "lon": "131.1144",
+                                    "ht_wh": "-0.7",
+                                    "ht_pa": "0.2",
+                                    "stn_id": 21229,
+                                    "lat": "37.4554",
+                                    "ht_ta": "3.9/3.4",
+                                    "ht_wd": "4.4/3.9"
+                                },
+                                {
+                                    "form": "Discus 3m",
+                                    "stn_ko": "\ub355\uc801\ub3c4",
+                                    "stn_en": "Deokjeokdo",
+                                    "ht_tw": "-0.2/-0.3",
+                                    "lon": "126.0188",
+                                    "ht_wh": "-0.1",
+                                    "ht_pa": "0.2",
+                                    "stn_id": 22101,
+                                    "lat": "37.2361",
+                                    "ht_ta": "3.4",
+                                    "ht_wd": "4.3/3.6"
+                                },
+                                {
+                                    "form": "Discus 3m",
+                                    "stn_ko": "\uce60\ubc1c\ub3c4",
+                                    "stn_en": "Chilbaldo",
+                                    "ht_tw": "-0.2/-0.3",
+                                    "lon": "125.7769",
+                                    "ht_wh": "-0.1",
+                                    "ht_pa": "0.2",
+                                    "stn_id": 22102,
+                                    "lat": "34.7933",
+                                    "ht_ta": "3.4",
+                                    "ht_wd": "4.3/3.6"
+                                },
+                                {
+                                    "form": "Discus 3m",
+                                    "stn_ko": "\uac70\ubb38\ub3c4",
+                                    "stn_en": "Geomundo",
+                                    "ht_tw": "-0.2/-0.3",
+                                    "lon": "127.5014",
+                                    "ht_wh": "-0.1",
+                                    "ht_pa": "0.2",
+                                    "stn_id": 22103,
+                                    "lat": "34.0014",
+                                    "ht_ta": "3.4",
+                                    "ht_wd": "4.3/3.6"
+                                },
+                                {
+                                    "form": "Discus 3m",
+                                    "stn_ko": "\uac70\uc81c\ub3c4",
+                                    "stn_en": "Geojedo",
+                                    "ht_tw": "-0.2/-0.3",
+                                    "lon": "128.9",
+                                    "ht_wh": "-0.1",
+                                    "ht_pa": "0.2",
+                                    "stn_id": 22104,
+                                    "lat": "34.7667",
+                                    "ht_ta": "3.4",
+                                    "ht_wd": "4.3/3.6"
+                                },
+                                {
+                                    "form": "NOMAD 6\u00d73",
+                                    "stn_ko": "\ub3d9\ud574",
+                                    "stn_en": "Donghae",
+                                    "ht_tw": "-1.2/-0.4",
+                                    "lon": "130.0",
+                                    "ht_wh": "-0.7",
+                                    "ht_pa": "0.2",
+                                    "stn_id": 22105,
+                                    "lat": "37.5442",
+                                    "ht_ta": "3.9/3.4",
+                                    "ht_wd": "4.4/3.9"
+                                },
+                                {
+                                    "form": "NOMAD 6\u00d73",
+                                    "stn_ko": "\ud3ec\ud56d",
+                                    "stn_en": "Pohang",
+                                    "ht_tw": "-1.2/-0.4",
+                                    "lon": "129.7833",
+                                    "ht_wh": "-0.7",
+                                    "ht_pa": "0.2",
+                                    "stn_id": 22106,
+                                    "lat": "36.35",
+                                    "ht_ta": "3.9/3.4",
+                                    "ht_wd": "4.4/3.9"
+                                },
+                                {
+                                    "form": "NOMAD 6\u00d73",
+                                    "stn_ko": "\ub9c8\ub77c\ub3c4",
+                                    "stn_en": "Marado",
+                                    "ht_tw": "-1.2/-0.4",
+                                    "lon": "126.0333",
+                                    "ht_wh": "-0.7",
+                                    "ht_pa": "0.2",
+                                    "stn_id": 22107,
+                                    "lat": "33.0833",
+                                    "ht_ta": "3.9/3.4",
+                                    "ht_wd": "4.4/3.9"
+                                },
+                                {
+                                    "form": "Discus 3m",
+                                    "stn_ko": "\uc678\uc5f0\ub3c4",
+                                    "stn_en": "Oeyeondo",
+                                    "ht_tw": "-0.2/-0.3",
+                                    "lon": "125.75",
+                                    "ht_wh": "-0.1",
+                                    "ht_pa": "0.2",
+                                    "stn_id": 22108,
+                                    "lat": "36.25",
+                                    "ht_ta": "3.4",
+                                    "ht_wd": "4.3/3.6"
+                                },
+                                {
+                                    "form": "Discus 3m",
+                                    "stn_ko": "\uc2e0\uc548",
+                                    "stn_en": "Shinan",
+                                    "ht_tw": "-0.2/-0.3",
+                                    "lon": "126.2417",
+                                    "ht_wh": "-0.1",
+                                    "ht_pa": "0.2",
+                                    "stn_id": 22183,
+                                    "lat": "34.7333",
+                                    "ht_ta": "3.4",
+                                    "ht_wd": "4.3/3.6"
+                                },
+                                {
+                                    "form": "Discus 3m",
+                                    "stn_ko": "\ucd94\uc790\ub3c4",
+                                    "stn_en": "Chujado",
+                                    "ht_tw": "-0.1",
+                                    "lon": "126.1411",
+                                    "ht_wh": "-0.1",
+                                    "ht_pa": "0.3",
+                                    "stn_id": 22184,
+                                    "lat": "33.79361",
+                                    "ht_ta": "2.9",
+                                    "ht_wd": "4.0"
+                                },
+                                {
+                                    "form": "Discus 3m",
+                                    "stn_ko": "\uc778\ucc9c",
+                                    "stn_en": "Incheon",
+                                    "ht_tw": "-0.2/-0.3",
+                                    "lon": "125.4289",
+                                    "ht_wh": "-0.1",
+                                    "ht_pa": "0.2",
+                                    "stn_id": 22185,
+                                    "lat": "37.0917",
+                                    "ht_ta": "3.4",
+                                    "ht_wd": "4.3/3.6"
+                                },
+                                {
+                                    "form": "Discus 3m",
+                                    "stn_ko": "\ubd80\uc548",
+                                    "stn_en": "Buan",
+                                    "ht_tw": "-0.2/-0.3",
+                                    "lon": "125.8139",
+                                    "ht_wh": "-0.1",
+                                    "ht_pa": "0.2",
+                                    "stn_id": 22186,
+                                    "lat": "35.6586",
+                                    "ht_ta": "3.4",
+                                    "ht_wd": "4.3/3.6"
+                                },
+                                {
+                                    "form": "NOMAD 6\u00d73",
+                                    "stn_ko": "\uc11c\uadc0\ud3ec",
+                                    "stn_en": "Seogwipo",
+                                    "ht_tw": "-1.2/0.4",
+                                    "lon": "127.0228",
+                                    "ht_wh": "-0.7",
+                                    "ht_pa": "0.2",
+                                    "stn_id": 22187,
+                                    "lat": "33.1281",
+                                    "ht_ta": "3.9/3.4",
+                                    "ht_wd": "4.3/3.6"
+                                },
+                                {
+                                    "form": "Discus 3m",
+                                    "stn_ko": "\ud1b5\uc601",
+                                    "stn_en": "Tongyeong",
+                                    "ht_tw": "-0.2/-0.3",
+                                    "lon": "128.225",
+                                    "ht_wh": "-0.1",
+                                    "ht_pa": "0.2",
+                                    "stn_id": 22188,
+                                    "lat": "34.3917",
+                                    "ht_ta": "3.4",
+                                    "ht_wd": "4.3/3.6"
+                                },
+                                {
+                                    "form": "NOMAD 6\u00d73",
+                                    "stn_ko": "\uc6b8\uc0b0",
+                                    "stn_en": "Ulsan",
+                                    "ht_tw": "-1.2/-0.4",
+                                    "lon": "129.8414",
+                                    "ht_wh": "-0.7",
+                                    "ht_pa": "0.2",
+                                    "stn_id": 22189,
+                                    "lat": "35.3453",
+                                    "ht_ta": "3.9/3.4",
+                                    "ht_wd": "4.3/3.6"
+                                },
+                                {
+                                    "form": "NOMAD 6\u00d73",
+                                    "stn_ko": "\uc6b8\uc9c4",
+                                    "stn_en": "Uljin",
+                                    "ht_tw": "-1.2/-0.4",
+                                    "lon": "129.8744",
+                                    "ht_wh": "-0.7",
+                                    "ht_pa": "0.2",
+                                    "stn_id": 22190,
+                                    "lat": "36.9069",
+                                    "ht_ta": "3.9/3.4",
+                                    "ht_wd": "4.3/3.6"
+                                },
+                                {
+                                    "form": "null",
+                                    "stn_ko": "\uc11c\ud574170",
+                                    "stn_en": "KOB170",
+                                    "ht_tw": "null",
+                                    "lon": "124.05694",
+                                    "ht_wh": "null",
+                                    "ht_pa": "0",
+                                    "stn_id": 22191,
+                                    "lat": "36.13333",
+                                    "ht_ta": "0",
+                                    "ht_wd": "0"
+                                },
+                                {
+                                    "form": "null",
+                                    "stn_ko": "\uc11c\ud574206",
+                                    "stn_en": "KOB206",
+                                    "ht_tw": "null",
+                                    "lon": "123.2625",
+                                    "ht_wh": "null",
+                                    "ht_pa": "0",
+                                    "stn_id": 22192,
+                                    "lat": "34.0",
+                                    "ht_ta": "0",
+                                    "ht_wd": "0"
+                                },
+                                {
+                                    "form": "null",
+                                    "stn_ko": "\uac00\uac70\ub3c4",
+                                    "stn_en": "Gageodo",
+                                    "ht_tw": "null",
+                                    "lon": "125.214722",
+                                    "ht_wh": "null",
+                                    "ht_pa": "0",
+                                    "stn_id": 22297,
+                                    "lat": "34.0275",
+                                    "ht_ta": "0",
+                                    "ht_wd": "0"
+                                },
+                                {
+                                    "form": "null",
+                                    "stn_ko": "\ud64d\ub3c4",
+                                    "stn_en": "Hongdo",
+                                    "ht_tw": "null",
+                                    "lon": "125.245556",
+                                    "ht_wh": "null",
+                                    "ht_pa": "0",
+                                    "stn_id": 22298,
+                                    "lat": "34.746667",
+                                    "ht_ta": "0",
+                                    "ht_wd": "0"
+                                },
+                                {
+                                    "form": "null",
+                                    "stn_ko": "\uc11c\ud574190",
+                                    "stn_en": "KOB190",
+                                    "ht_tw": "null",
+                                    "lon": "124.13",
+                                    "ht_wh": "null",
+                                    "ht_pa": "0",
+                                    "stn_id": 22299,
+                                    "lat": "35.0",
+                                    "ht_ta": "0",
+                                    "ht_wd": "0"
+                                },
+                                {
+                                    "form": "null",
+                                    "stn_ko": "\ub0a8\ud574239",
+                                    "stn_en": "KOB239",
+                                    "ht_tw": "null",
+                                    "lon": "124.73",
+                                    "ht_wh": "null",
+                                    "ht_pa": "0",
+                                    "stn_id": 22300,
+                                    "lat": "32.83",
+                                    "ht_ta": "0",
+                                    "ht_wd": "0"
+                                },
+                                {
+                                    "form": "null",
+                                    "stn_ko": "\ub0a8\ud574465",
+                                    "stn_en": "KOB465",
+                                    "ht_tw": "null",
+                                    "lon": "126.4",
+                                    "ht_wh": "null",
+                                    "ht_pa": "0",
+                                    "stn_id": 22301,
+                                    "lat": "31.666667",
+                                    "ht_ta": "0",
+                                    "ht_wd": "0"
+                                },
+                                {
+                                    "form": "null",
+                                    "stn_ko": "\ub3d9\ud57478",
+                                    "stn_en": "KOB78",
+                                    "ht_tw": "null",
+                                    "lon": "130.516667",
+                                    "ht_wh": "null",
+                                    "ht_pa": "0",
+                                    "stn_id": 22302,
+                                    "lat": "36.966667",
+                                    "ht_ta": "0",
+                                    "ht_wd": "0"
+                                },
+                                {
+                                    "form": "null",
+                                    "stn_ko": "\ud48d\ub3c4",
+                                    "stn_en": "Pungdo",
+                                    "ht_tw": "null",
+                                    "lon": "126.41",
+                                    "ht_wh": "null",
+                                    "ht_pa": "0",
+                                    "stn_id": 22303,
+                                    "lat": "37.15833",
+                                    "ht_ta": "0",
+                                    "ht_wd": "0"
+                                },
+                                {
+                                    "form": "null",
+                                    "stn_ko": "\ub0a8\ud574244",
+                                    "stn_en": "KOB244",
+                                    "ht_tw": "null",
+                                    "lon": "127.27222",
+                                    "ht_wh": "null",
+                                    "ht_pa": "0",
+                                    "stn_id": 22304,
+                                    "lat": "32.72222",
+                                    "ht_ta": "0",
+                                    "ht_wd": "0"
+                                },
+                                {
+                                    "form": "null",
+                                    "stn_ko": "\ub3d9\ud57457",
+                                    "stn_en": "KOB57",
+                                    "ht_tw": "null",
+                                    "lon": "129.6",
+                                    "ht_wh": "null",
+                                    "ht_pa": "0",
+                                    "stn_id": 22305,
+                                    "lat": "38.366667",
+                                    "ht_ta": "0",
+                                    "ht_wd": "0"
+                                },
+                                {
+                                    "form": "null",
+                                    "stn_ko": "\ub0a8\ud574111",
+                                    "stn_en": "KOB111",
+                                    "ht_tw": "null",
+                                    "lon": "128.375",
+                                    "ht_wh": "null",
+                                    "ht_pa": "0",
+                                    "stn_id": 22309,
+                                    "lat": "33.775",
+                                    "ht_ta": "0",
+                                    "ht_wd": "0"
+                                },
+                                {
+                                    "form": "null",
+                                    "stn_ko": "\uace0\uc131",
+                                    "stn_en": "Goseong",
+                                    "ht_tw": "null",
+                                    "lon": "128.639167",
+                                    "ht_wh": "null",
+                                    "ht_pa": "0",
+                                    "stn_id": 22310,
+                                    "lat": "38.31722",
+                                    "ht_ta": "0",
+                                    "ht_wd": "0"
+                                },
+                                {
+                                    "form": "null",
+                                    "stn_ko": "\uc0bc\ucc99",
+                                    "stn_en": "Samcheok",
+                                    "ht_tw": "null",
+                                    "lon": "129.31805",
+                                    "ht_wh": "null",
+                                    "ht_pa": "0",
+                                    "stn_id": 22311,
+                                    "lat": "37.46389",
+                                    "ht_ta": "0",
+                                    "ht_wd": "0"
+                                }
+                            ]
+                        }
+                    }
+                ]
+            },
+            "pageNo": 1,
+            "numOfRows": 200,
+            "totalCount": 1
+        }
+    }
+}
+===== getWaveBuoyLstTbl (year=2024 month=12) =====
+{
+    "response": {
+        "header": {
+            "resultCode": "00",
+            "resultMsg": "NORMAL_SERVICE"
+        },
+        "body": {
+            "dataType": "JSON",
+            "items": {
+                "item": [
+                    {
+                        "stn_waveBuoy": {
+                            "info": [
+                                {
+                                    "stn_ko": "\ub3c5\ub3c4",
+                                    "stn_en": "Dokdo",
+                                    "ht_tw": "-0.3",
+                                    "lon": "131.8694444",
+                                    "ht_wh": "-0.1",
+                                    "stn_id": 22441,
+                                    "lat": "37.23722222"
+                                },
+                                {
+                                    "stn_ko": "\ud608\uc554",
+                                    "stn_en": "Hyeolam",
+                                    "ht_tw": "-0.3",
+                                    "lon": "130.8542",
+                                    "ht_wh": "-0.1",
+                                    "stn_id": 22442,
+                                    "lat": "37.5414"
+                                },
+                                {
+                                    "stn_ko": "\uad6c\uc554",
+                                    "stn_en": "Guam",
+                                    "ht_tw": "-0.3",
+                                    "lon": "130.8044",
+                                    "ht_wh": "-0.1",
+                                    "stn_id": 22443,
+                                    "lat": "37.4789"
+                                },
+                                {
+                                    "stn_ko": "\uc2e0\uc9c4\ub3c4",
+                                    "stn_en": "Sinjindo",
+                                    "ht_tw": "-0.3",
+                                    "lon": "126.1261",
+                                    "ht_wh": "-0.1",
+                                    "stn_id": 22444,
+                                    "lat": "36.6068"
+                                },
+                                {
+                                    "stn_ko": "\uc0bd\uc2dc\ub3c4",
+                                    "stn_en": "Sangsido",
+                                    "ht_tw": "-0.3",
+                                    "lon": "126.335",
+                                    "ht_wh": "-0.1",
+                                    "stn_id": 22445,
+                                    "lat": "36.37"
+                                },
+                                {
+                                    "stn_ko": "\uc9c4\ub3c4",
+                                    "stn_en": "Jindo",
+                                    "ht_tw": "-0.3",
+                                    "lon": "126.0569",
+                                    "ht_wh": "-0.1",
+                                    "stn_id": 22449,
+                                    "lat": "34.4425"
+                                },
+                                {
+                                    "stn_ko": "\ub450\ubbf8\ub3c4",
+                                    "stn_en": "Dumido",
+                                    "ht_tw": "-0.3",
+                                    "lon": "128.1491667",
+                                    "ht_wh": "-0.1",
+                                    "stn_id": 22450,
+                                    "lat": "34.71"
+                                },
+                                {
+                                    "stn_ko": "\uc5f0\uace1",
+                                    "stn_en": "Yeongok",
+                                    "ht_tw": "-0.3",
+                                    "lon": "128.8856",
+                                    "ht_wh": "-0.1",
+                                    "stn_id": 22451,
+                                    "lat": "37.8674"
+                                },
+                                {
+                                    "stn_ko": "\uc7a5\uc548",
+                                    "stn_en": "Jangan",
+                                    "ht_tw": "-0.3",
+                                    "lon": "129.2883",
+                                    "ht_wh": "-0.1",
+                                    "stn_id": 22454,
+                                    "lat": "35.2958"
+                                },
+                                {
+                                    "stn_ko": "\ud574\uae08\uac15",
+                                    "stn_en": "Haegeumgang",
+                                    "ht_tw": "-0.3",
+                                    "lon": "128.6908",
+                                    "ht_wh": "-0.1",
+                                    "stn_id": 22455,
+                                    "lat": "34.7358"
+                                },
+                                {
+                                    "stn_ko": "\uccad\uc0b0\ub3c4",
+                                    "stn_en": "Cheongsando",
+                                    "ht_tw": "-0.3",
+                                    "lon": "126.7442",
+                                    "ht_wh": "-0.1",
+                                    "stn_id": 22456,
+                                    "lat": "34.1381"
+                                },
+                                {
+                                    "stn_ko": "\uc81c\uc8fc\ud56d",
+                                    "stn_en": "Jejuhang",
+                                    "ht_tw": "-0.3",
+                                    "lon": "126.4939",
+                                    "ht_wh": "-0.1",
+                                    "stn_id": 22457,
+                                    "lat": "33.5253"
+                                },
+                                {
+                                    "stn_ko": "\uc911\ubb38",
+                                    "stn_en": "Jungmun",
+                                    "ht_tw": "-0.3",
+                                    "lon": "126.3931",
+                                    "ht_wh": "-0.1",
+                                    "stn_id": 22458,
+                                    "lat": "33.2254"
+                                },
+                                {
+                                    "stn_ko": "\uc624\ub959\ub3c4",
+                                    "stn_en": "null",
+                                    "ht_tw": "-0.3",
+                                    "lon": "129.1283",
+                                    "ht_wh": "-0.1",
+                                    "stn_id": 22459,
+                                    "lat": "35.095"
+                                },
+                                {
+                                    "stn_ko": "\ub2e4\ub300\ud3ec",
+                                    "stn_en": "null",
+                                    "ht_tw": "-0.3",
+                                    "lon": "128.9561",
+                                    "ht_wh": "-0.1",
+                                    "stn_id": 22460,
+                                    "lat": "35.0224"
+                                },
+                                {
+                                    "stn_ko": "\uc774\uc791\ub3c4",
+                                    "stn_en": "Ijakdo",
+                                    "ht_tw": "-0.3",
+                                    "lon": "126.2007",
+                                    "ht_wh": "-0.1",
+                                    "stn_id": 22461,
+                                    "lat": "37.1551"
+                                },
+                                {
+                                    "stn_ko": "\uc6b8\ub989\uc74d",
+                                    "stn_en": "Ulleungeup",
+                                    "ht_tw": "-0.3",
+                                    "lon": "130.9003",
+                                    "ht_wh": "-0.1",
+                                    "stn_id": 22464,
+                                    "lat": "37.4714"
+                                },
+                                {
+                                    "stn_ko": "\ud6c4\ud3ec",
+                                    "stn_en": "Hupo",
+                                    "ht_tw": "-0.3",
+                                    "lon": "129.4881",
+                                    "ht_wh": "-0.1",
+                                    "stn_id": 22465,
+                                    "lat": "36.7192"
+                                },
+                                {
+                                    "stn_ko": "\uae08\uc624\ub3c4",
+                                    "stn_en": "Geumodo",
+                                    "ht_tw": "-0.3",
+                                    "lon": "127.7767",
+                                    "ht_wh": "-0.1",
+                                    "stn_id": 22466,
+                                    "lat": "34.5667"
+                                },
+                                {
+                                    "stn_ko": "\ud55c\uc0b0\ub3c4",
+                                    "stn_en": "Hansando",
+                                    "ht_tw": "-0.3",
+                                    "lon": "128.496111",
+                                    "ht_wh": "-0.1",
+                                    "stn_id": 22467,
+                                    "lat": "34.705556"
+                                },
+                                {
+                                    "stn_ko": "\ucd94\uc790\ub3c4",
+                                    "stn_en": "Chujado",
+                                    "ht_tw": "-0.3",
+                                    "lon": "126.2783",
+                                    "ht_wh": "-0.1",
+                                    "stn_id": 22468,
+                                    "lat": "33.9731"
+                                },
+                                {
+                                    "stn_ko": "\uc6b0\ub3c4",
+                                    "stn_en": "Udo",
+                                    "ht_tw": "-0.3",
+                                    "lon": "126.9667",
+                                    "ht_wh": "-0.1",
+                                    "stn_id": 22469,
+                                    "lat": "33.5222"
+                                },
+                                {
+                                    "stn_ko": "\ud1a0\uc131",
+                                    "stn_en": "Toseong",
+                                    "ht_tw": "-0.3",
+                                    "lon": "128.5757",
+                                    "ht_wh": "-0.1",
+                                    "stn_id": 22471,
+                                    "lat": "38.2773"
+                                },
+                                {
+                                    "stn_ko": "\uc790\uc6d4\ub3c4",
+                                    "stn_en": "Jawoldo",
+                                    "ht_tw": "-0.3",
+                                    "lon": "126.1581",
+                                    "ht_wh": "-0.1",
+                                    "stn_id": 22472,
+                                    "lat": "37.3044"
+                                },
+                                {
+                                    "stn_ko": "\uc11c\ucc9c",
+                                    "stn_en": "Seochun",
+                                    "ht_tw": "-0.3",
+                                    "lon": "126.3328",
+                                    "ht_wh": "-0.1",
+                                    "stn_id": 22473,
+                                    "lat": "36.1669"
+                                },
+                                {
+                                    "stn_ko": "\uad70\uc0b0",
+                                    "stn_en": "Gunsan",
+                                    "ht_tw": "-0.3",
+                                    "lon": "126.4256",
+                                    "ht_wh": "-0.1",
+                                    "stn_id": 22474,
+                                    "lat": "35.8881"
+                                },
+                                {
+                                    "stn_ko": "\uc601\uad11",
+                                    "stn_en": "Yeonggwang",
+                                    "ht_tw": "-0.3",
+                                    "lon": "126.1764",
+                                    "ht_wh": "-0.1",
+                                    "stn_id": 22475,
+                                    "lat": "35.4358"
+                                },
+                                {
+                                    "stn_ko": "\uac00\ud30c\ub3c4",
+                                    "stn_en": "Gapado",
+                                    "ht_tw": "-0.3",
+                                    "lon": "126.2639",
+                                    "ht_wh": "-0.1",
+                                    "stn_id": 22476,
+                                    "lat": "33.1626"
+                                },
+                                {
+                                    "stn_ko": "\ub178\ud654\ub3c4",
+                                    "stn_en": "Nohwado",
+                                    "ht_tw": "-0.3",
+                                    "lon": "126.4917",
+                                    "ht_wh": "-0.1",
+                                    "stn_id": 22477,
+                                    "lat": "34.2417"
+                                },
+                                {
+                                    "stn_ko": "\uace0\ud765",
+                                    "stn_en": "Goheung",
+                                    "ht_tw": "-0.3",
+                                    "lon": "127.1786",
+                                    "ht_wh": "-0.1",
+                                    "stn_id": 22478,
+                                    "lat": "34.3753"
+                                },
+                                {
+                                    "stn_ko": "\ub9f9\ubc29",
+                                    "stn_en": "null",
+                                    "ht_tw": "-0.3",
+                                    "lon": "129.2292",
+                                    "ht_wh": "-0.1",
+                                    "stn_id": 22479,
+                                    "lat": "37.4017"
+                                },
+                                {
+                                    "stn_ko": "\ub9f9\uace8\uc218\ub3c4",
+                                    "stn_en": "Manggolsudo",
+                                    "ht_tw": "-0.3",
+                                    "lon": "125.9547",
+                                    "ht_wh": "-0.1",
+                                    "stn_id": 22481,
+                                    "lat": "34.20931"
+                                },
+                                {
+                                    "stn_ko": "\uac04\uc808\uacf6",
+                                    "stn_en": "Ganjeolgot",
+                                    "ht_tw": "-0.3",
+                                    "lon": "129.375",
+                                    "ht_wh": "-0.1",
+                                    "stn_id": 22483,
+                                    "lat": "35.367"
+                                },
+                                {
+                                    "stn_ko": "\uc7a0\ub3c4",
+                                    "stn_en": "Jamdo",
+                                    "ht_tw": "-0.3",
+                                    "lon": "128.681",
+                                    "ht_wh": "-0.1",
+                                    "stn_id": 22484,
+                                    "lat": "35.058"
+                                },
+                                {
+                                    "stn_ko": "\uc18c\ub9e4\ubb3c\ub3c4",
+                                    "stn_en": "Somaemuldo",
+                                    "ht_tw": "-0.3",
+                                    "lon": "128.538",
+                                    "ht_wh": "-0.1",
+                                    "stn_id": 22485,
+                                    "lat": "34.621"
+                                },
+                                {
+                                    "stn_ko": "\ud611\uc7ac",
+                                    "stn_en": "Hyubjae",
+                                    "ht_tw": "-0.3",
+                                    "lon": "126.2091",
+                                    "ht_wh": "-0.1",
+                                    "stn_id": 22486,
+                                    "lat": "33.4005"
+                                },
+                                {
+                                    "stn_ko": "\ucc9c\uc218\ub9cc",
+                                    "stn_en": "Chunsuman",
+                                    "ht_tw": "-0.3",
+                                    "lon": "126.43944",
+                                    "ht_wh": "-0.1",
+                                    "stn_id": 22487,
+                                    "lat": "36.46722"
+                                },
+                                {
+                                    "stn_ko": "\uc548\uba74\ub3c4",
+                                    "stn_en": "Anmyeondo",
+                                    "ht_tw": "-0.3",
+                                    "lon": "126.2981",
+                                    "ht_wh": "-0.1",
+                                    "stn_id": 22488,
+                                    "lat": "36.5369"
+                                },
+                                {
+                                    "stn_ko": "\ub300\uce58\ub9c8\ub3c4",
+                                    "stn_en": "Daechimado",
+                                    "ht_tw": "-0.3",
+                                    "lon": "126.0319",
+                                    "ht_wh": "-0.1",
+                                    "stn_id": 22489,
+                                    "lat": "35.0175"
+                                },
+                                {
+                                    "stn_ko": "\uc6d4\ud3ec",
+                                    "stn_en": "Wolpo",
+                                    "ht_tw": "-0.3",
+                                    "lon": "129.4017",
+                                    "ht_wh": "-0.1",
+                                    "stn_id": 22490,
+                                    "lat": "36.2169"
+                                },
+                                {
+                                    "stn_ko": "\uae40\ub155",
+                                    "stn_en": "Gimnyeong",
+                                    "ht_tw": "-0.3",
+                                    "lon": "126.7636",
+                                    "ht_wh": "-0.1",
+                                    "stn_id": 22491,
+                                    "lat": "33.5817"
+                                },
+                                {
+                                    "stn_ko": "\ube44\uc548\ub3c4",
+                                    "stn_en": "Biando",
+                                    "ht_tw": "-0.3",
+                                    "lon": "126.35228",
+                                    "ht_wh": "-0.1",
+                                    "stn_id": 22492,
+                                    "lat": "35.74044"
+                                },
+                                {
+                                    "stn_ko": "\uc790\uc740",
+                                    "stn_en": "Jaeun",
+                                    "ht_tw": "-0.3",
+                                    "lon": "125.86806",
+                                    "ht_wh": "-0.1",
+                                    "stn_id": 22493,
+                                    "lat": "34.91917"
+                                },
+                                {
+                                    "stn_ko": "\ub099\uc6d4",
+                                    "stn_en": "Nakwol",
+                                    "ht_tw": "-0.3",
+                                    "lon": "126.21028",
+                                    "ht_wh": "-0.1",
+                                    "stn_id": 22494,
+                                    "lat": "35.20056"
+                                },
+                                {
+                                    "stn_ko": "\uc2e0\uc0b0",
+                                    "stn_en": "Shinshan",
+                                    "ht_tw": "-0.3",
+                                    "lon": "126.90583",
+                                    "ht_wh": "-0.1",
+                                    "stn_id": 22495,
+                                    "lat": "33.37778"
+                                },
+                                {
+                                    "stn_ko": "\uc7a5\ubd09\ub3c4",
+                                    "stn_en": "jangbongdo",
+                                    "ht_tw": "-0.3",
+                                    "lon": "126.3541667",
+                                    "ht_wh": "-0.1",
+                                    "stn_id": 22496,
+                                    "lat": "37.49138889"
+                                },
+                                {
+                                    "stn_ko": "\ubcc0\uc0b0",
+                                    "stn_en": "byeonsan",
+                                    "ht_tw": "-0.3",
+                                    "lon": "126.4591667",
+                                    "ht_wh": "-0.1",
+                                    "stn_id": 22497,
+                                    "lat": "35.65916667"
+                                },
+                                {
+                                    "stn_ko": "\ub0a8\ud574",
+                                    "stn_en": "namhae",
+                                    "ht_tw": "-0.3",
+                                    "lon": "127.9925",
+                                    "ht_wh": "-0.1",
+                                    "stn_id": 22498,
+                                    "lat": "34.69638889"
+                                },
+                                {
+                                    "stn_ko": "\uc5f0\ud654\ub3c4",
+                                    "stn_en": "yeonhwado",
+                                    "ht_tw": "-0.3",
+                                    "lon": "128.365278",
+                                    "ht_wh": "-0.1",
+                                    "stn_id": 22499,
+                                    "lat": "34.673333"
+                                },
+                                {
+                                    "stn_ko": "\uc870\ub3c4",
+                                    "stn_en": "Jodo",
+                                    "ht_tw": "-0.3",
+                                    "lon": "126.1152778",
+                                    "ht_wh": "-0.1",
+                                    "stn_id": 22500,
+                                    "lat": "34.28722222"
+                                },
+                                {
+                                    "stn_ko": "\uc0ac\ub7c9\ub3c4",
+                                    "stn_en": "null",
+                                    "ht_tw": "-0.3",
+                                    "lon": "128.1398056",
+                                    "ht_wh": "-0.1",
+                                    "stn_id": 22501,
+                                    "lat": "34.86083333"
+                                },
+                                {
+                                    "stn_ko": "\ub098\ub85c\ub3c4",
+                                    "stn_en": "null",
+                                    "ht_tw": "-0.3",
+                                    "lon": "127.5894444",
+                                    "ht_wh": "-0.1",
+                                    "stn_id": 22502,
+                                    "lat": "34.43222222"
+                                },
+                                {
+                                    "stn_ko": "\ubd88\ubb34\ub3c4",
+                                    "stn_en": "null",
+                                    "ht_tw": "-0.3",
+                                    "lon": "126.1741667",
+                                    "ht_wh": "-0.1",
+                                    "stn_id": 22503,
+                                    "lat": "34.31777778"
+                                },
+                                {
+                                    "stn_ko": "\uc704\ub3c4",
+                                    "stn_en": "null",
+                                    "ht_tw": "-0.1",
+                                    "lon": "126.2610278",
+                                    "ht_wh": "-0.1",
+                                    "stn_id": 22504,
+                                    "lat": "35.65838889"
+                                },
+                                {
+                                    "stn_ko": "\uc601\ub77d",
+                                    "stn_en": "null",
+                                    "ht_tw": "-0.3",
+                                    "lon": "126.1947222",
+                                    "ht_wh": "-0.1",
+                                    "stn_id": 22505,
+                                    "lat": "33.23861111"
+                                },
+                                {
+                                    "stn_ko": "\uc6b8\ub989\uc11c\ubd80",
+                                    "stn_en": "null",
+                                    "ht_tw": "-0.3",
+                                    "lon": "130.5001333",
+                                    "ht_wh": "-0.1",
+                                    "stn_id": 22506,
+                                    "lat": "37.44241905"
+                                },
+                                {
+                                    "stn_ko": "\ucd08\ub3c4",
+                                    "stn_en": "null",
+                                    "ht_tw": "-0.3",
+                                    "lon": "127.21806",
+                                    "ht_wh": "-0.1",
+                                    "stn_id": 22507,
+                                    "lat": "34.15111"
+                                },
+                                {
+                                    "stn_ko": "\uc7a5\uc548\ud1f4",
+                                    "stn_en": "null",
+                                    "ht_tw": "-0.1",
+                                    "lon": "126.28305556",
+                                    "ht_wh": "-0.1",
+                                    "stn_id": 22509,
+                                    "lat": "37.03361111"
+                                },
+                                {
+                                    "stn_ko": "\uc704\ub3c4\ub3d9\ubd80",
+                                    "stn_en": "null",
+                                    "ht_tw": "-0.1",
+                                    "lon": "126.358611",
+                                    "ht_wh": "-0.1",
+                                    "stn_id": 22510,
+                                    "lat": "35.642972"
+                                },
+                                {
+                                    "stn_ko": "\uae30\uc7a5",
+                                    "stn_en": "null",
+                                    "ht_tw": "-0.3",
+                                    "lon": "129.28333",
+                                    "ht_wh": "-0.1",
+                                    "stn_id": 22511,
+                                    "lat": "35.22222"
+                                },
+                                {
+                                    "stn_ko": "\uc9c0\uc2ec\ub3c4",
+                                    "stn_en": "null",
+                                    "ht_tw": "-0.3",
+                                    "lon": "128.775",
+                                    "ht_wh": "-0.1",
+                                    "stn_id": 22512,
+                                    "lat": "34.82778"
+                                },
+                                {
+                                    "stn_ko": "\uc774\uc218\ub3c4",
+                                    "stn_en": "null",
+                                    "ht_tw": "-0.3",
+                                    "lon": "128.75833",
+                                    "ht_wh": "-0.1",
+                                    "stn_id": 22513,
+                                    "lat": "34.97167"
+                                },
+                                {
+                                    "stn_ko": "\uad6c\uc5c4",
+                                    "stn_en": "null",
+                                    "ht_tw": "-0.3",
+                                    "lon": "126.37485",
+                                    "ht_wh": "-0.1",
+                                    "stn_id": 22514,
+                                    "lat": "33.52096"
+                                },
+                                {
+                                    "stn_ko": "\uc704\ubbf8",
+                                    "stn_en": "null",
+                                    "ht_tw": "-0.3",
+                                    "lon": "126.71119",
+                                    "ht_wh": "-0.1",
+                                    "stn_id": 22515,
+                                    "lat": "33.22369"
+                                },
+                                {
+                                    "stn_ko": "\uc2e0\ucc3d",
+                                    "stn_en": "null",
+                                    "ht_tw": "-0.3",
+                                    "lon": "126.10888",
+                                    "ht_wh": "-0.1",
+                                    "stn_id": 22516,
+                                    "lat": "33.36686"
+                                },
+                                {
+                                    "stn_ko": "\ud558\ub3c4",
+                                    "stn_en": "null",
+                                    "ht_tw": "-0.3",
+                                    "lon": "126.92981",
+                                    "ht_wh": "-0.1",
+                                    "stn_id": 22517,
+                                    "lat": "33.56078"
+                                },
+                                {
+                                    "stn_ko": "\ub2f9\uc0ac",
+                                    "stn_en": "null",
+                                    "ht_tw": "-0.3",
+                                    "lon": "129.50278",
+                                    "ht_wh": "-0.1",
+                                    "stn_id": 22518,
+                                    "lat": "35.57778"
+                                },
+                                {
+                                    "stn_ko": "\uace0\uc131",
+                                    "stn_en": "null",
+                                    "ht_tw": "-0.3",
+                                    "lon": "128.63917",
+                                    "ht_wh": "-0.1",
+                                    "stn_id": 22519,
+                                    "lat": "38.31722"
+                                },
+                                {
+                                    "stn_ko": "\uac15\ub989",
+                                    "stn_en": "null",
+                                    "ht_tw": "-0.3",
+                                    "lon": "129.06083",
+                                    "ht_wh": "-0.1",
+                                    "stn_id": 22520,
+                                    "lat": "37.79833"
+                                },
+                                {
+                                    "stn_ko": "\uc0bc\ucc99",
+                                    "stn_en": "null",
+                                    "ht_tw": "-0.3",
+                                    "lon": "129.318056",
+                                    "ht_wh": "-0.1",
+                                    "stn_id": 22521,
+                                    "lat": "37.463889"
+                                },
+                                {
+                                    "stn_ko": "\uc5f0\ud3c9\ub3c4",
+                                    "stn_en": "null",
+                                    "ht_tw": "-0.3",
+                                    "lon": "125.64833",
+                                    "ht_wh": "-0.1",
+                                    "stn_id": 22522,
+                                    "lat": "37.61944"
+                                },
+                                {
+                                    "stn_ko": "\uc8fd\ubcc0",
+                                    "stn_en": "null",
+                                    "ht_tw": "-0.1",
+                                    "lon": "129.45944",
+                                    "ht_wh": "-0.1",
+                                    "stn_id": 22523,
+                                    "lat": "37.10278"
+                                },
+                                {
+                                    "stn_ko": "\uad6c\ub8e1\ud3ec",
+                                    "stn_en": "null",
+                                    "ht_tw": "-0.1",
+                                    "lon": "129.59861",
+                                    "ht_wh": "-0.1",
+                                    "stn_id": 22524,
+                                    "lat": "35.96778"
+                                },
+                                {
+                                    "stn_ko": "\ubcfc\uc74c\ub3c4",
+                                    "stn_en": "null",
+                                    "ht_tw": "-0.3",
+                                    "lon": "126.134167",
+                                    "ht_wh": "-0.1",
+                                    "stn_id": 22525,
+                                    "lat": "37.611944"
+                                },
+                                {
+                                    "stn_ko": "\ub179\ub3c4",
+                                    "stn_en": "null",
+                                    "ht_tw": "-0.1",
+                                    "lon": "126.2075",
+                                    "ht_wh": "-0.1",
+                                    "stn_id": 22526,
+                                    "lat": "36.2641"
+                                }
+                            ]
+                        }
+                    }
+                ]
+            },
+            "pageNo": 1,
+            "numOfRows": 200,
+            "totalCount": 1
+        }
+    }
+}
+===== getLhawsLstTbl (year=2024 month=12) =====
+{
+    "response": {
+        "header": {
+            "resultCode": "00",
+            "resultMsg": "NORMAL_SERVICE"
+        },
+        "body": {
+            "dataType": "JSON",
+            "items": {
+                "item": [
+                    {
+                        "stn_lhaws": {
+                            "info": [
+                                {
+                                    "stn_ko": "\uc11c\uc218\ub3c4",
+                                    "stn_en": "Seosudo",
+                                    "ht_ps": "14.5",
+                                    "ht_tw": "-7.0",
+                                    "lon": "126.39333333",
+                                    "ht_wh": "-7.0",
+                                    "stn_id": 955,
+                                    "lat": "37.325",
+                                    "ht_ta": "17.0",
+                                    "ht_wd": "20.0"
+                                },
+                                {
+                                    "stn_ko": "\uac00\ub300\uc554",
+                                    "stn_en": "Gadaeam",
+                                    "ht_ps": "12.5",
+                                    "ht_tw": "-7.0",
+                                    "lon": "125.9767",
+                                    "ht_wh": "-7.0",
+                                    "stn_id": 956,
+                                    "lat": "36.77",
+                                    "ht_ta": "15.0",
+                                    "ht_wd": "15.0"
+                                },
+                                {
+                                    "stn_ko": "\uc2ed\uc774\ub3d9\ud30c",
+                                    "stn_en": "Sibidongpa",
+                                    "ht_ps": "71.0",
+                                    "ht_tw": "-7.0",
+                                    "lon": "126.225",
+                                    "ht_wh": "-7.0",
+                                    "stn_id": 957,
+                                    "lat": "35.98666667",
+                                    "ht_ta": "75.0",
+                                    "ht_wd": "75.0"
+                                },
+                                {
+                                    "stn_ko": "\uac08\ub9e4\uc5ec",
+                                    "stn_en": "Galmaeyeo",
+                                    "ht_ps": "11.0",
+                                    "ht_tw": "-7.0",
+                                    "lon": "126.245",
+                                    "ht_wh": "-7.0",
+                                    "stn_id": 958,
+                                    "lat": "35.61333333",
+                                    "ht_ta": "14.0",
+                                    "ht_wd": "15.0"
+                                },
+                                {
+                                    "stn_ko": "\ud574\uc218\uc11c",
+                                    "stn_en": "Haesuseo",
+                                    "ht_ps": "9.0",
+                                    "ht_tw": "-7.0",
+                                    "lon": "126.02666667",
+                                    "ht_wh": "-7.0",
+                                    "stn_id": 959,
+                                    "lat": "34.26333333",
+                                    "ht_ta": "11.0",
+                                    "ht_wd": "12.0"
+                                },
+                                {
+                                    "stn_ko": "\uc9c0\uadc0\ub3c4",
+                                    "stn_en": "Jigwido",
+                                    "ht_ps": "12.0",
+                                    "ht_tw": "-15.0",
+                                    "lon": "126.6542",
+                                    "ht_wh": "-15.0",
+                                    "stn_id": 960,
+                                    "lat": "33.22333",
+                                    "ht_ta": "17.0",
+                                    "ht_wd": "18.0"
+                                },
+                                {
+                                    "stn_ko": "\uac04\uc5ec\uc554",
+                                    "stn_en": "Ganyoam",
+                                    "ht_ps": "24.0",
+                                    "ht_tw": "-15.0",
+                                    "lon": "127.85778",
+                                    "ht_wh": "-15.0",
+                                    "stn_id": 961,
+                                    "lat": "34.285",
+                                    "ht_ta": "26.5",
+                                    "ht_wd": "27.5"
+                                },
+                                {
+                                    "stn_ko": "\uc774\ub355\uc11c",
+                                    "stn_en": "Idukseo",
+                                    "ht_ps": "11.5",
+                                    "ht_tw": "-7.0",
+                                    "lon": "129.475",
+                                    "ht_wh": "-7.0",
+                                    "stn_id": 963,
+                                    "lat": "35.5667",
+                                    "ht_ta": "14.0",
+                                    "ht_wd": "17.5"
+                                },
+                                {
+                                    "stn_ko": "\uc624\ub959\ub3c4",
+                                    "stn_en": "Oryukdo",
+                                    "ht_ps": "null",
+                                    "ht_tw": "null",
+                                    "lon": "129.127",
+                                    "ht_wh": "null",
+                                    "stn_id": 984,
+                                    "lat": "35.091",
+                                    "ht_ta": "0",
+                                    "ht_wd": "0"
+                                }
+                            ]
+                        }
+                    }
+                ]
+            },
+            "pageNo": 1,
+            "numOfRows": 200,
+            "totalCount": 1
+        }
+    }
+}
