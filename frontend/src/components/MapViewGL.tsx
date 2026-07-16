@@ -244,7 +244,7 @@ function BuoyPopupContent({ b }: { b: MergedBuoy }) {
       <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6, padding: '8px 0', marginBottom: 10,
         borderTop: '1px solid var(--line)', borderBottom: '1px solid var(--line)' }}>
         <span className="tnum" style={{ color: 'var(--t-lo)', fontSize: 13, fontWeight: 500, textAlign: 'right' }}>
-          {b.obs_time ? <>{b.obs_time} KST · {relativeFromMinutes(b.minutes_since)}</> : '관측 이력 없음'}
+          {b.obs_time ? <>{b.obs_time} · {relativeFromMinutes(b.minutes_since)}</> : '관측 이력 없음'}
         </span>
       </div>
 
@@ -267,7 +267,7 @@ function BuoyPopupContent({ b }: { b: MergedBuoy }) {
           하단 여백은 컨테이너 padding(18px)에 맡긴다. */}
       {b.hasLive && (
         <div style={{ background: 'var(--bg-panel)', border: '1px solid var(--line)', borderRadius: 7, padding: '7px 9px 5px' }}>
-          <div className="eyebrow" style={{ marginBottom: 3, fontSize: 13 }}>최근 24h 파고 추이</div>
+          <div className="eyebrow" style={{ marginBottom: 3, fontSize: 13 }}>최근 1일 파고 추이</div>
           <WaveSparkline source={b.source} id={b.id} />
         </div>
       )}

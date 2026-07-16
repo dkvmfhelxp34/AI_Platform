@@ -17,6 +17,7 @@ from fastapi.responses import StreamingResponse
 
 import chat as chat_mod
 import config
+import field_service
 import kma_marine
 import live_cache
 import live_snapshot
@@ -30,6 +31,9 @@ async def _lifespan(_app: FastAPI):
     # 백그라운드 라이브 스냅샷 리프레셔 시작(live_cache.py) — 서버 기동은 이 완료를 기다리지 않는다
     # (첫 채움은 KMA 는 즉시, KHOA 는 burst 소요시간 ≈6초 후 대부분 채워짐. /api/health 는 스냅샷과 무관).
     live_cache.start_refresher()
+    # 2D 필드 오버레이(바람+수온) 배경 리프레셔(field_service.py) — 동일 패턴. 신선한 디스크
+    # 캐시가 있으면 즉시 ready=True, 없으면 배경에서 첫 수집을 마칠 때까지 /api/field 는 미준비.
+    field_service.start_refresher()
     yield
 
 
@@ -108,6 +112,16 @@ def api_status():
     이 하나의 계산 결과를 읽으면, "40분 전인데 정상"류 모순이 구조적으로 발생할 수 없다.
     """
     return live_snapshot.build_status_overview()
+
+
+@app.get("/api/field")
+def api_field():
+    """2D 필드 오버레이(바람·표층수온) — 현재 KST 1시간 프레임 1장(타임라인 없음, `field_service.py`).
+
+    배경 스레드가 미리 채워둔 인메모리 페이로드를 그대로 반환한다(요청측 외부호출·재계산 0).
+    아직 첫 수집 전(부팅 직후, 신선한 디스크 캐시도 없음)이면 `{"ready": false, "error": ...}`.
+    """
+    return field_service.get_field_payload()
 
 
 @app.get("/api/timeseries")

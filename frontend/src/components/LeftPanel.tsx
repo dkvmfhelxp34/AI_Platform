@@ -1,6 +1,7 @@
 /**
  * LeftPanel — §19(2026-07-16) "통합 리스트(깔끔)" 하단 재설계 + §25(2026-07-16) 디클러터 패스
- * + §25-b(2026-07-16) 카테고리 그룹 아코디언.
+ * + §25-b(2026-07-16) 카테고리 그룹 아코디언 + §25-c/d/e(2026-07-16) 상태 타일 위계 강화·
+ * 용어 통일·리스트 구간 분리.
  * - 상단(유지): 상태 3타일(필터와 동일 소스로 클릭 토글).
  * - **필터 섹션 축소(§25)**: "상태" 체크박스 그룹 삭제(바로 위 3타일이 이미 같은 visibleStatuses
  *   를 토글해 완전 중복이었다) — 남은 건 "유형" 그룹 하나뿐이라 헤더 두 줄(필터→유형) 대신 한 줄
@@ -18,7 +19,16 @@
  *   항상 보임) · 지도 마커 클릭 등으로 selectedStationId 가 바뀌면 그 부이의 카테고리를
  *   collapsedGroups 에서 제거해 자동으로 펼친다. 패널 자체는 App 에서 display:none 으로만
  *   숨기므로(언마운트 아님) 이 접힘 상태는 별도 영속화 없이 그대로 유지된다.
- * - 최종 세로 순서: 부이 수신 현황(타일) → 유형 필터 → 검색+정렬 → 통합 리스트.
+ * - **상태 타일 위계 강화(§25-c)**: 상단 3타일 라벨을 14.5px/700·숫자를 28px 로 키우고, 비활성
+ *   (필터 해제) 상태는 dot 을 솔리드 대신 1.5px 링(투명 채움+STATUS_HEX 테두리)으로 바꿔 on/off 를
+ *   한눈에 구분한다(라벨/숫자 색만으로는 약했다).
+ * - **용어 통일(§25-d)**: 예외 블록 라벨 "주의 필요"→"수신 이상"(헤더 KPI 클러스터 KpiBar.tsx 의
+ *   동일 스탯과 어휘를 맞춘다).
+ * - **리스트 구간 분리(§25-e)**: 예외 블록과 카테고리 그룹 리스트 사이에 풀블리드 헤어라인(스크롤
+ *   컨테이너 좌우 패딩을 음수 마진으로 상쇄해 패널 가장자리까지 확장) + "부이 목록" 이월헤더를
+ *   추가해 두 구획의 성격 차이(예외 vs 유형별 전체 열람)를 분명히 한다.
+ * - 최종 세로 순서: 부이 수신 현황(타일) → 유형 필터 → 검색+정렬 → 통합 리스트(예외 → 구분선 →
+ *   부이 목록 → 카테고리 그룹).
  */
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useShallow } from 'zustand/react/shallow'
@@ -168,7 +178,8 @@ export default function LeftPanel() {
     return n
   }, [grouped])
 
-  // 주의 필요(예외 블록) — 상태·종류 체크박스 필터와는 무관하게 항상 노출(필터로 지연/미수신을
+  // 수신 이상(예외 블록, §25-d — 헤더 KPI 클러스터의 "수신 이상"과 용어 통일) — 상태·종류
+  // 체크박스 필터와는 무관하게 항상 노출(필터로 지연/미수신을
   // 숨겨도 경보 자체는 계속 보이게), 단 검색어는 통합 리스트 전체(예외+그룹)에 공통 적용한다.
   const exceptions = useMemo(() => {
     let list = buoys.filter(b => b.status !== '정상')
@@ -288,7 +299,7 @@ export default function LeftPanel() {
         {exceptions.length > 0 && (
           <>
             <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, padding: '6px 8px 3px' }}>
-              <span className="eyebrow" style={{ color: 'var(--lost)' }}>주의 필요</span>
+              <span className="eyebrow" style={{ color: 'var(--lost)' }}>수신 이상</span>
               <span className="tnum" style={{ fontSize: 13, fontWeight: 700, color: 'var(--lost)',
                 background: 'var(--lost-soft)', border: '1px solid var(--lost-border)', borderRadius: 10, padding: '0 6px' }}>
                 {exceptions.length}
@@ -303,7 +314,24 @@ export default function LeftPanel() {
                 외 {exceptions.length - EXCEPTION_CAP}건 더
               </div>
             )}
-            <div style={{ height: 1, background: 'var(--line-soft)', margin: '6px 8px 2px' }} />
+          </>
+        )}
+
+        {/* §25-e — 예외 블록(수신 이상)과 유형별 브라우즈 리스트(부이 목록) 사이 시각
+            분리. 헤어라인은 스크롤 컨테이너 자체 좌우 패딩(6px)을 음수 마진으로 상쇄해 패널
+            가장자리까지 풀블리드로 확장한다(다른 섹션 구분선과 동일하게 "edge-to-edge"). 예외가
+            0건이면 헤어라인은 생략한다 — 바로 위 툴바의 하단 보더와 거의 붙어 "고아 선"처럼 겹쳐
+            보이는 걸 막기 위함이고, "부이 목록" 이월헤더는 그룹이 하나라도 있는 한 항상 남겨
+            구획 이름을 유지한다(단, 전체가 빈 상태 — 아래 큰 empty-state 문구가 뜨는 경우 —
+            에는 라벨만 덩그러니 뜨는 걸 막기 위해 함께 숨긴다). */}
+        {!(exceptions.length === 0 && groupedCount === 0) && (
+          <>
+            {exceptions.length > 0 && (
+              <div style={{ height: 1, background: 'var(--line)', margin: '12px -6px 0' }} />
+            )}
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, padding: exceptions.length > 0 ? '10px 8px 3px' : '6px 8px 3px' }}>
+              <span className="eyebrow">부이 목록</span>
+            </div>
           </>
         )}
 
@@ -422,18 +450,22 @@ function StatReadout({ status, count, active, onClick, divider }: {
       flex: 1, textAlign: 'left', cursor: 'pointer', background: 'none', border: 'none', padding: '0 12px 0 0',
       borderLeft: divider ? '1px solid var(--line)' : 'none',
       marginLeft: divider ? 12 : 0,
-      opacity: active ? 1 : 0.4,
-      transition: 'opacity 0.14s var(--ease-out)',
     }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 5 }}>
-        <span style={{ width: 7, height: 7, borderRadius: '50%', background: color, flexShrink: 0,
-          boxShadow: active ? `0 0 0 3px ${color}2E` : 'none', transition: 'box-shadow 0.14s' }} />
-        {/* §20 — 이 텍스트는 라벨(중간 위계)이지 핵심 데이터가 아니다. 핵심 수치는 아래 count.
-            active 여부는 dot 의 glow·opacity 로 이미 전달되므로 라벨 자체를 t-hi 로 승격하지 않는다. */}
-        <span style={{ fontSize: 13, color: 'var(--t-mid)', fontWeight: 600 }}>{status}</span>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
+        {/* §25-c — active 는 solid dot(+glow), inactive 는 1.5px 링(투명 채움 + STATUS_HEX
+            테두리)으로 한눈에 구분(라벨·숫자 색만으로는 약해서 dot 도 형태 자체를 바꾼다). */}
+        <span style={active
+          ? { width: 9, height: 9, borderRadius: '50%', background: color, flexShrink: 0,
+              boxShadow: `0 0 0 3px ${color}2E`, transition: 'box-shadow 0.14s' }
+          : { width: 9, height: 9, borderRadius: '50%', background: 'transparent', boxSizing: 'border-box',
+              border: `1.5px solid ${color}`, flexShrink: 0 }} />
+        {/* §20/§25-c — 라벨을 14.5px/700 으로 승격해 위계를 강화(기존 13px/600 은 숫자 대비 너무
+            약했다). active 는 t-mid, inactive 는 t-lo — dot 의 solid/ring 전환과 함께 상태를 전달. */}
+        <span style={{ fontSize: 14.5, fontWeight: 700, letterSpacing: 'normal',
+          color: active ? 'var(--t-mid)' : 'var(--t-lo)' }}>{status}</span>
       </div>
-      <div className="tnum" style={{ fontSize: 22, fontWeight: 700, lineHeight: 1,
-        color: active ? color : 'var(--t-hi)', transition: 'color 0.14s' }}>
+      <div className="tnum" style={{ fontSize: 28, fontWeight: 700, lineHeight: 1.05, letterSpacing: '-0.02em',
+        color: active ? color : 'var(--t-lo)', opacity: active ? 1 : 0.45, transition: 'color 0.14s, opacity 0.14s' }}>
         {count}
       </div>
     </button>

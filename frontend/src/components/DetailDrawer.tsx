@@ -57,7 +57,7 @@ const METRICS: { key: TimeseriesMetric; label: string; unit: string }[] = [
   { key: 'pressure', label: '기압', unit: 'hPa' },
 ]
 const RANGES: { key: TimeseriesRange; label: string }[] = [
-  { key: '24h', label: '24h' },
+  { key: '24h', label: '1일' },
   { key: '7d', label: '7일' },
   { key: '30d', label: '30일' },
   { key: '1y', label: '1년' },
@@ -426,7 +426,7 @@ function CurrentReadout({ buoy, recentTs }: { buoy: MergedBuoy; recentTs: Timese
         <div style={{ fontSize: 13.5, color: 'var(--t-lo)', padding: '10px 0' }}>표시할 관측값이 없습니다</div>
       )}
       <div className="tnum" style={{ fontSize: 13, color: 'var(--t-lo)', marginTop: 10, fontWeight: 500 }}>
-        {buoy.obs_time ? `${buoy.obs_time} KST` : '관측 이력 없음'} · {relativeFromMinutes(buoy.minutes_since)}
+        {buoy.obs_time ? buoy.obs_time : '관측 이력 없음'} · {relativeFromMinutes(buoy.minutes_since)}
         {cadence != null && <> · 관측주기 ~{cadence >= 60 ? `${Math.round(cadence / 60)}시간` : `${Math.round(cadence)}분`}</>}
       </div>
     </Section>
@@ -580,6 +580,19 @@ function TimeseriesSection({ buoy, range, setRange, metric, setMetric, ts, loadi
     return { yMin: min, yMax: max <= min ? min + step : max, ticks: built.ticks, tickStep: built.step }
   }, [chartData, metric, points])
 
+  // 사용자 실기 피드백(2026-07-16) — 기압처럼 자릿수가 큰 지표("1001")에서 <YAxis> width 가
+  // 고정값(예: 40)으로는 부족해 맨 앞자리가 잘려 보였다("001"). 지표별 고정 폭 하드코딩 대신,
+  // 실제로 렌더될 눈금 라벨 문자열(ticks×tickStep×DECIMALS 로 formatYTick 이 만드는 값)의
+  // 최대 문자수 × 현재 tick fontSize(13) 기준 근사 글자폭 + 여백으로 매번 계산한다 — 파고처럼
+  // 짧은 값("1.2")일 때는 과도한 빈 공간이 남지 않고, 기압처럼 긴 값일 때는 잘리지 않는다.
+  const yAxisWidth = useMemo(() => {
+    const TICK_FONT_SIZE = 13
+    const CHAR_WIDTH = TICK_FONT_SIZE * 0.62 // 숫자·소수점 위주 라벨의 근사 평균 글자폭(px)
+    const AXIS_MARGIN = 12 // 라벨-플롯 간격 + 안전 여백
+    const maxLen = ticks.reduce((m, t) => Math.max(m, formatYTick(t, tickStep, DECIMALS[metric]).length), 1)
+    return Math.ceil(maxLen * CHAR_WIDTH) + AXIS_MARGIN
+  }, [ticks, tickStep, metric])
+
   const qcDots = useMemo(() => chartData.filter(r => r.qcFlag && r.obs != null), [chartData])
   const aiDots = useMemo(() => chartData.filter(r => r.aiSpike && r.obs != null), [chartData])
   const gradId = `obs-grad-${metric}`
@@ -621,14 +634,14 @@ function TimeseriesSection({ buoy, range, setRange, metric, setMetric, ts, loadi
           {visibleMetrics.length > 1 ? (
             visibleMetrics.map(m => (
               <Chip key={m.key} active={metric === m.key} onClick={() => setMetric(m.key)}>
-                {m.label} <span style={{ opacity: 0.7 }}>{m.unit}</span>
+                {m.label}
               </Chip>
             ))
           ) : (
             // 지표가 하나뿐인 지점 — 전환할 게 없으므로 탭 UI 대신 라벨만 표시(§14)
             visibleMetrics[0] && (
               <span className="eyebrow" style={{ padding: '6px 2px 6px 0' }}>
-                {visibleMetrics[0].label} <span style={{ opacity: 0.75 }}>{visibleMetrics[0].unit}</span>
+                {visibleMetrics[0].label}
               </span>
             )
           )}
@@ -707,7 +720,7 @@ function TimeseriesSection({ buoy, range, setRange, metric, setMetric, ts, loadi
                     0 까지 눌린다 — allowDataOverflow 로 우리 domain([yMin,yMax], 이미 실측 범위를
                     포함하도록 계산됨)을 그대로 신뢰하게 한다. */}
                 <YAxis tick={{ fontSize: 13, fill: AXIS_HEX, fontFamily: 'var(--font-ui)' }}
-                  axisLine={false} tickLine={false} width={40} domain={[yMin, yMax]}
+                  axisLine={false} tickLine={false} width={yAxisWidth} domain={[yMin, yMax]}
                   ticks={ticks} tickFormatter={v => formatYTick(v, tickStep, DECIMALS[metric])}
                   allowDataOverflow />
                 <Tooltip content={<ChartTooltip unit={metricCfg.unit} metricLabel={metricCfg.label} decimals={DECIMALS[metric]} />}
@@ -775,8 +788,6 @@ function TimeseriesSection({ buoy, range, setRange, metric, setMetric, ts, loadi
                 ))}
               </ComposedChart>
             </ResponsiveContainer>
-            {/* 축 아래 "KST" 표기(§18-1) — NDBC 계기 플롯의 시간대(PDT) 캡션 관행 */}
-            <div className="tnum" style={{ textAlign: 'right', fontSize: 12, fontWeight: 600, color: TLO_HEX, padding: '0 10px 5px 0' }}>KST</div>
             </div>
           </>
         )}

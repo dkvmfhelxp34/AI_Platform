@@ -17,6 +17,7 @@
 | 시계열+QC | KMA `kma_buoy2.php`(tm1~tm2, AQC/MQC) | KMA |
 | 실측+예측 조위 | KHOA `surveyTideLevel`(bscTdlvHgt/tdlvHgt) | KHOA |
 | 수온 | KHOA `surveyWaterTemp` | KHOA |
+| 지도 바람장·수온장(2D 배경) | GFS 0.25° `UGRD/VGRD@10m` + `TMP:surface`×`LAND:surface` (AWS `.idx`+Range) | NOAA (무키) |
 
 ---
 
@@ -108,7 +109,35 @@
 
 ---
 
-## 3. 구현 유의사항 (파서/폴링)
+## 3. NOAA 공개 오픈데이터 (무키·무신청) — 지도 2D 필드 오버레이 전용
+
+> 실측일 2026-07-16. **관측(부이)과 별개 계통**이다 — 필드는 모델/위성 격자값이므로 지도 배경으로만 쓰고, 마커·팝업·시계열의 관측값과 혼동시키지 않는다(범례에 출처·기준시각 명시). 인증키가 없어 신청 절차도 없다.
+
+### 3-1. GFS 0.25° (바람장 + 표층수온) — 채택
+
+- 버킷: `https://noaa-gfs-bdp-pds.s3.amazonaws.com/gfs.{YYYYMMDD}/{CC}/atmos/gfs.t{CC}z.pgrb2.0p25.f{FFF}`
+- **전체 GRIB 를 받지 않는다.** 같은 이름 + `.idx` 사이드카(텍스트)를 먼저 받아 필요한 레코드의 바이트 오프셋을 구하고, 본 파일에는 `Range:` 헤더로 해당 구간만 요청한다. 한반도 영역 4개 레코드 합계가 수백 KB 수준.
+- 사용 레코드: `UGRD:10 m above ground` · `VGRD:10 m above ground` · `TMP:surface` · `LAND:surface`
+- **수온**: `pgrb2` 에 `WTMP` 는 **없다**. 대신 `TMP:surface` 를 `LAND:surface`(1=육지) 로 마스킹하면 해수면온도가 된다(K→℃). GFS 표층 분석은 위성 SST 를 동화한 값이며, **바람장과 같은 파일·같은 기준시각**이라 발행 지연이 0 이고 두 필드의 시각이 정확히 일치한다.
+- ⚠️ **idx 매칭은 반드시 `VAR:LEVEL:` 완전일치**로 할 것. 부분문자열 포함(`"TMP:surface:" in line`)으로 찾으면 `ICETMP:surface:` 에 먼저 걸려 엉뚱한 바이트 범위를 잡고, 바다 격자가 전부 `9999` 센티널로 나온다(실제 발생·수정한 버그).
+- 폴백: NOMADS filter CGI `https://nomads.ncep.noaa.gov/cgi-bin/filter_gfs_0p25_1hr.pl`(한반도 서브셋 실측 27,694 B · 0.45 s). AWS 도달 불가 시에만.
+- 최신 사이클 탐색: 발행 지연을 감안해 최신 사이클부터 시도하고 실패 시 이전 사이클로 내려간다.
+
+### 3-2. OISST v2.1 (위성 수온) — 폴백만
+
+- `https://noaa-cdr-sea-surface-temp-optimum-interpolation-pds.s3.amazonaws.com/data/v2.1/avhrr/{YYYYMM}/oisst-avhrr-v02r01.{YYYYMMDD}{suffix}.nc` (`suffix` = `_preliminary` 우선 → 최종본)
+- **발행 지연 D-2.** 2026-07-16 09 UTC 실측: `20260716`·`20260715` 는 예비본/최종본 모두 404, `20260714_preliminary` 만 200. NOAA CRW 5km `coraltemp` 도 동일하게 D-2.
+- 따라서 "현재 시점(KST)" 서사에는 부적합 → **GFS `TMP:surface` 를 1순위로, OISST 는 GFS 표층 수신 실패 시 폴백**으로만 쓴다. 폴백 시 D-1→D-5 역탐색.
+
+### 3-3. 운영 (`backend/field_service.py`)
+
+- 매시 +5분에 새 프레임을 받아 인메모리 원자 교체 + `data/cache/field/` 의 이전 시각 파일 삭제(**현재 1프레임만 유지**). 프론트는 `/api/field` 1회 호출로 즉시 렌더(zero-loading).
+- 수집 실패 시 직전 프레임을 계속 서빙(stale)하고 10분 뒤 재시도. 부팅 시 캐시 파일은 75분 이내인 경우만 채택.
+- 실측 페이로드: 89×109 격자(bounds 115~142E, 24~46N), 바람+수온 합계 **181 KB**.
+
+---
+
+## 4. 구현 유의사항 (파서/폴링)
 
 1. KMA: EUC-KR 디코드 → `#`/`9999`/빈줄 스킵 → `-99` 결측 → KST 그대로. 10분 격자 반올림.
 2. KHOA: `serviceKey` 1회 unquote, `type=json` 고정, 지점별 순회 → 캐시(변동 적은 목록은 장기, 실시간은 폴링주기), 일 10,000건 한도 관리.
@@ -119,3 +148,5 @@
 - 기상청 API허브 해양관측: https://apihub.kma.go.kr/apiList.do?seqApi=3
 - 공공데이터포털 해양기상월보: https://www.data.go.kr/data/15059094/openapi.do
 - KHOA 서비스: data.go.kr 15142507(조위)·15142506(수온)·15155508(dtRecent)·15155516(twRecent)·15155994(noonWave)·15146602/15146611(운영현황)
+- NOAA GFS (AWS Open Data): https://registry.opendata.aws/noaa-gfs-bdp-pds/ · NOMADS: https://nomads.ncep.noaa.gov/
+- NOAA OISST v2.1 (AWS Open Data): https://registry.opendata.aws/noaa-cdr-oceanic/
