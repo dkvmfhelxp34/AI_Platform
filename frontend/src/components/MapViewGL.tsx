@@ -1,6 +1,7 @@
 /**
- * MapViewGL — Native MapLibre GL 지도 (Wave 2 "예외 우선(exception-first)" 개편 패스).
- * - Base:     위성(Esri World Imagery raster, 무토큰) 기본 + 화이트(Carto Positron 벡터) 토글.
+ * MapViewGL — Native MapLibre GL 지도 (균형 다크 재스킨 패스, ui_revision_notes §17).
+ * - Base:     위성(Esri World Imagery raster, 무토큰) **기본**(§17 — §16 라이트 기본 폐기) +
+ *             라이트(Carto Positron 벡터) 토글은 유지.
  *             위성 베이스에는 은은한 다크 스크림(map-sat-scrim)을 얹어 초록/갈색 텍스처와 마커 색이
  *             뒤엉키는 "카무플라주"를 완화한다(마커 DOM 자체엔 필터를 걸지 않음 — 색은 그대로).
  * - Buoys:    maplibregl.Marker HTML, anchor='center' — 글리프를 정확히 좌표 중심에 고정한다.
@@ -8,17 +9,26 @@
  *             배치해 el 의 바운딩박스(=앵커 기준)에 전혀 영향을 주지 않는다 → 줌 드리프트 원천 차단.
  *             모양(원=KMA 해양기상부이 / 삼각=KMA 파고부이 / 라운드사각=KHOA 해양관측부이) = 기관·종류,
  *             색(fill) = 수신상태 — 정상은 저채도(지도에 녹아듦), 지연=앰버, 미수신=고채도 경고색+
- *             강한 펄스+최상단 z-index로 "예외만 튄다".
+ *             강한 펄스+최상단 z-index로 "예외만 튄다". **값 배지는 표시하지 않는다**(§17 — 지도는
+ *             위치·상태 등 전체 상황 파악용, 수치는 팝업/상세에서 확인). 마커 = 형태+상태색+흰
+ *             보더+소프트섀도+이름 라벨뿐.
  * - NoCluster: 부이 하나하나가 실제 관측소이므로 숫자 카운트 배지로 묶지 않는다(사용자 명시 요구) —
  *             저줌에서 마커가 몰리는 문제는 카운트 배지 대신 ①작은 코어 크기 ②예외 우선 저채도
  *             색(정상은 조용히 후퇴) ③라벨 기본 숨김 ④얇은 아웃라인+소프트 섀도 4가지로만 완화한다.
  *             항상 모든 부이가 개별 마커로 지도에 남는다.
  * - Label:    Wave 3b(ui_revision_notes §9) — 기본 **표시**(아이콘 아래)로 되돌리되 충돌기반
- *             declutter 적용: 라벨끼리 겹치면 우선순위(심각도 미수신>지연>정상) 높은 쪽만 남기고
- *             나머지는 숨긴다. 확대해 공간이 생기면(겹침이 풀리면) 숨겨졌던 라벨도 그 시점부터
- *             바로 드러난다(줌 진행형 — 별도의 "고줌 전부 노출" 임계 이상에서는 겹침 검사 자체를
- *             생략해 전부 노출). hover 중인 마커는 우선순위와 무관하게 항상 노출. 선택된 마커는
- *             라벨을 아예 렌더하지 않아(팝업이 이름을 표시) 팝업과 겹칠 가능성을 원천 차단한다.
+ *             declutter 적용: 라벨끼리 겹치면 우선순위 높은 쪽만 남기고 나머지는 숨긴다. 확대해
+ *             공간이 생기면(겹침이 풀리면) 숨겨졌던 라벨도 그 시점부터 바로 드러난다(줌 진행형 —
+ *             별도의 "고줌 전부 노출" 임계 이상에서는 겹침 검사 자체를 생략해 전부 노출).
+ *             **우선순위(§18-2, 2026-07-16 갱신)**: 미수신(0) > 지연(1) > **해양기상부이 정상(2)**
+ *             > 기타(파고부이·KHOA) 정상(3) — `labelRankOf()`. 저줌(NORMAL_LABEL_ZOOM 미만)에서는
+ *             rank 3(기타 정상)만 후보에서 제외해 숨기고, rank 0~2(예외 전체 + 주요 부이인 해양기상
+ *             부이 정상)는 겹침 기반 declutter 후보로 항상 올라간다 — 국가 줌에서도 주요 부이 이름이
+ *             더 보이되 과밀은 declutter 로 방지한다. hover 중인 마커는 우선순위와 무관하게 항상
+ *             노출. 선택된 마커는 라벨을 아예 렌더하지 않아(팝업이 이름을 표시) 팝업과 겹칠 가능성을
+ *             원천 차단한다. 라벨 색 = 밝은 글씨(#F1F5FA) + 어두운 halo(text-shadow) — 위성·라이트
+ *             베이스 양쪽에서 동일하게 읽힌다(§17, §16 라이트 기본의 "어두운 글씨"는 위성 위에서 안
+ *             읽혀 폐기). 마커 좌표·앵커·declutter 좌표계산 자체는 미변경(가시성/후보 조건·rank만).
  * - Popup:    Wave 3b — 드로어와 구분되는 "가벼운 티저" 카드로 재설계. React createRoot 마운트.
  *             글리프/한글명/영문명/(기관명)/상태칩/관측시각(KST, 경과) + 핵심값 3종(파고·풍속+방위·
  *             수온, 임계값 색) + 최근 24h 파고 미니 스파크라인(가벼운 자체 fetch) + 큼직한 "상세" CTA.
@@ -77,17 +87,27 @@ const CORE_D = 13
 // 고줌 진입 시 겹침 검사 없이 라벨을 전부 노출하는 기준(그 아래는 충돌기반 declutter 적용)
 const HIGH_ZOOM_LABEL = INIT_ZOOM + 3.3
 
-// §12(전문가 패널) — 저줌에서의 "지저분함"의 최대 원흉이던 정상 라벨 상시노출을 되돌린다: 이
-// 임계 미만에서는 정상(정상 수신) 상태 라벨을 충돌 여부와 무관하게 아예 후보에서 제외한다(지연·
-// 미수신·hover·선택만 노출). 이 임계 이상이면 정상 라벨도 충돌기반 declutter 후보로 합류하고,
-// HIGH_ZOOM_LABEL 이상에서는(기존 로직 그대로) 전부 무조건 노출된다.
+// §18-2(2026-07-16) — 저줌에서의 "지저분함"의 최대 원흉이던 정상 라벨 상시노출은 여전히 피하되,
+// "기타(파고부이·KHOA) 정상"(labelRankOf 의 rank 3)만 이 임계 미만에서 후보 제외한다. 미수신·지연은
+// 물론 **해양기상부이(주요 부이) 정상(rank 2)도 이 임계와 무관하게 항상 후보**로 올라간다 — 국가
+// 줌에서 예외 + 주요 부이 이름이 더 보이게 하는 핵심 변경(사용자 지시 "지도에 주요 부이 이름 더
+// 표기"). 이 임계 이상이면 기타 정상도 충돌기반 declutter 후보로 합류하고, HIGH_ZOOM_LABEL
+// 이상에서는(기존 로직 그대로) 전부 무조건 노출된다.
 const NORMAL_LABEL_ZOOM = INIT_ZOOM + 1.6
 
 // declutter 배치 시 라벨 사이 최소 여백(px) — 너무 빡빡하게 붙어 보이지 않도록
 const LABEL_DECLUTTER_PAD = 3
 
-// 부이 상태 심각도(라벨/z-index 우선순위 — 미수신 > 지연 > 정상)
+// 부이 상태 심각도(마커 z-index 스태킹 우선순위 — 미수신 > 지연 > 정상). 라벨 declutter 우선순위는
+// 아래 labelRankOf() 가 별도로 산정한다(카테고리까지 반영하는 더 세분화된 축).
 const STATUS_RANK: Record<BuoyStatus, number> = { '미수신': 0, '지연': 1, '정상': 2 }
+
+// §18-2 — 라벨 declutter 우선순위: 미수신(0) > 지연(1) > 해양기상부이(주요 부이) 정상(2) >
+// 기타(파고부이·KHOA 해양관측부이) 정상(3). 겹치면 낮은 rank 가 우선(자리를 선점).
+function labelRankOf(b: MergedBuoy): number {
+  if (b.status !== '정상') return STATUS_RANK[b.status]
+  return categoryOf(b) === 'kma-b' ? 2 : 3
+}
 
 function escapeHtml(s: string): string {
   return s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] as string))
@@ -100,26 +120,41 @@ function degToCompass(deg: number | null | undefined): string {
 }
 
 // ── 부이 마커 HTML(el 의 내부 콘텐츠만 — el 자신의 크기/포지션은 생성부에서 고정) ────────────────
+// §17 — 값 배지(파고/수온 등)는 완전히 제거했다: 지도는 위치·상태 등 전체 상황 파악용이고,
+// 수치는 팝업/상세에서 확인한다. 마커 = 형태(종류)+상태색 채움+흰 보더+소프트섀도+이름 라벨뿐.
 function buildMarkerInnerHTML(b: MergedBuoy, selected: boolean, baseLayer: BaseLayer): string {
   const hex = STATUS_HEX[b.status]
   const category = categoryOf(b)
   // "살아있는 신호" 브리딩 — 미수신은 더 뚜렷하게(경고), 지연은 은은하게, 정상은 정적(계도적 침묵).
   const pulseClass = b.status === '미수신' ? 'buoy-marker-pulse-alert' : b.status === '지연' ? 'buoy-marker-pulse' : ''
-  const strokeColor = selected ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.55)'
-  const strokeWidth = selected ? 1.5 : 1.0
+  // 흰 보더 + 소프트 섀도 — 라이트 벡터맵·위성 이미지 양쪽에서 마커가 배경에 묻히지 않도록.
+  const strokeColor = selected ? '#ffffff' : 'rgba(255,255,255,0.92)'
+  const strokeWidth = selected ? 2 : 1.6
 
   const glyph = buoyGlyphSvg(category, { fill: hex, stroke: strokeColor, strokeWidth, size: CORE_D })
-  const core = `<div class="${pulseClass}" style="display:flex;filter:drop-shadow(0 1px 2px rgba(0,0,0,0.62)) drop-shadow(0 0 1.5px rgba(0,0,0,0.5));">${glyph}</div>`
+  // 다크 소프트 섀도(순검정 저알파) — 위성 텍스처·라이트 벡터 양쪽에서 글리프 윤곽을 살린다.
+  const core = `<div class="${pulseClass}" style="display:flex;filter:drop-shadow(0 1px 3px rgba(0,0,0,0.55)) drop-shadow(0 0 1.5px rgba(0,0,0,0.4));">${glyph}</div>`
   const selRing = selected ? '<span class="buoy-marker-selected-ring"></span>' : ''
 
-  // 라벨(§9 2026-07-15 업데이트) — 검은 배경 pill 제거, 흰 글씨 + 은은한 그림자/아웃라인만으로
-  // 표시한다(위성/라이트 양쪽에서 읽히도록 그림자 대비만 유지 — 배경색 반전 로직 불필요).
+  // 라벨(§17 — 밝은 글씨 + 어두운 halo) — 흰/밝은 글자를 짙은 halo 로 감싸 위성 이미지 위에서도,
+  // 라이트 벡터맵 위에서도 동일하게 읽히게 한다(배경색 반전 로직 불필요).
   // 선택된 마커는 라벨을 아예 그리지 않는다 — 팝업이 이름을 표시하므로 겹칠 가능성이 없다.
   if (selected) return `${selRing}${core}`
 
-  // QHD 100% 배율에서도 편히 읽히도록 라벨 14px(§12 — 13→14px 상향)
-  const nameStyle = `font-size:14px;font-weight:700;color:#fff;white-space:nowrap;pointer-events:none;` +
-    `text-shadow:0 1px 2px rgba(0,0,0,0.85), 0 0 1px rgba(0,0,0,0.9), 0 0 5px rgba(0,0,0,0.55);`
+  // QHD 100% 배율에서도 편히 읽히도록 라벨 14px. 라벨 색·halo 는 base-aware(§17 재정정 2026-07-16):
+  //  - 위성(다크 이미지): 밝은 글씨(#F1F5FA) + 어두운 halo(원래대로).
+  //  - 라이트(밝은 벡터맵): 어두운 글씨(#12212E) + 흰 halo — 밝은 배경에서 밝은글씨+어두운halo 가
+  //    뿌옇게 뭉개지던 문제 해소(베이스맵 자체 지명처럼 어두운 글씨로 선명하게 읽힘).
+  const isLightBase = baseLayer === 'light'
+  const nameColor = isLightBase ? '#12212E' : '#F1F5FA'
+  const nameHalo = isLightBase
+    ? `text-shadow:-1.4px -1.4px 0 rgba(255,255,255,0.95),1.4px -1.4px 0 rgba(255,255,255,0.95),` +
+      `-1.4px 1.4px 0 rgba(255,255,255,0.95),1.4px 1.4px 0 rgba(255,255,255,0.95),` +
+      `0 0 5px rgba(255,255,255,0.9),0 1px 3px rgba(255,255,255,0.85);`
+    : `text-shadow:-1.4px -1.4px 0 rgba(6,10,15,0.9),1.4px -1.4px 0 rgba(6,10,15,0.9),` +
+      `-1.4px 1.4px 0 rgba(6,10,15,0.9),1.4px 1.4px 0 rgba(6,10,15,0.9),` +
+      `0 0 5px rgba(0,0,0,0.85), 0 1px 3px rgba(0,0,0,0.7);`
+  const nameStyle = `font-size:14px;font-weight:700;color:${nameColor};white-space:nowrap;pointer-events:none;${nameHalo}`
   const label = `<span data-role="name" class="buoy-name-label" style="position:absolute;top:100%;left:50%;` +
     `transform:translateX(-50%);margin-top:4px;opacity:0;${nameStyle}">${escapeHtml(b.name)}</span>`
 
@@ -341,6 +376,7 @@ export default function MapViewGL() {
     const zoom = map.getZoom()
     const highZoom = zoom >= HIGH_ZOOM_LABEL
     const showNormal = zoom >= NORMAL_LABEL_ZOOM
+    const setVis = (nameEl: HTMLElement, v: string) => { nameEl.style.opacity = v }
     const hoverEntries: { nameEl: HTMLElement; rect: Box }[] = []
     const entries: { nameEl: HTMLElement; rank: number; rect: Box }[] = []
 
@@ -353,26 +389,29 @@ export default function MapViewGL() {
         hoverEntries.push({ nameEl, rect: nameEl.getBoundingClientRect() })
         return
       }
-      // 저줌에서는 정상 상태 라벨을 충돌 검사 후보에도 올리지 않고 즉시 숨긴다(§12 핵심 변경).
-      if (el.dataset.status === '정상' && !showNormal) {
-        nameEl.style.opacity = '0'
+      // 저줌에서는 "기타 정상"(rank 3 — 파고부이·KHOA)만 충돌 검사 후보에도 올리지 않고 즉시
+      // 숨긴다(§18-2). rank 0~2(미수신·지연·해양기상부이 정상=주요 부이)는 이 임계와 무관하게
+      // 항상 후보로 남아 겹침 기반 declutter 를 거친다.
+      const rank = parseInt(el.dataset.rank ?? '9')
+      if (rank >= 3 && !showNormal) {
+        setVis(nameEl, '0')
         return
       }
-      entries.push({ nameEl, rank: parseInt(el.dataset.rank ?? '9'), rect: nameEl.getBoundingClientRect() })
+      entries.push({ nameEl, rank, rect: nameEl.getBoundingClientRect() })
     })
 
     const placed: Box[] = []
     // hover 는 사용자가 지금 가리키는 마커 — 겹침 여부와 무관하게 항상 표시
-    for (const e of hoverEntries) { e.nameEl.style.opacity = '1'; placed.push(e.rect) }
+    for (const e of hoverEntries) { setVis(e.nameEl, '1'); placed.push(e.rect) }
     // 나머지는 심각도(미수신>지연>정상) 우선순위로 자리 선점. 고줌에서는 겹침 검사를 생략(전부 노출).
     entries.sort((a, b) => a.rank - b.rank)
     for (const e of entries) {
       const r = e.rect
-      if (r.right <= r.left) { e.nameEl.style.opacity = '0'; continue }
+      if (r.right <= r.left) { setVis(e.nameEl, '0'); continue }
       if (!highZoom && placed.some(p => overlap(r, p, LABEL_DECLUTTER_PAD))) {
-        e.nameEl.style.opacity = '0'
+        setVis(e.nameEl, '0')
       } else {
-        e.nameEl.style.opacity = '1'
+        setVis(e.nameEl, '1')
         placed.push(r)
       }
     }
@@ -416,7 +455,7 @@ export default function MapViewGL() {
         if (prevStatus !== b.status || prevSel !== isSel || prevBase !== baseLayer) {
           el.innerHTML = buildMarkerInnerHTML(b, isSel, baseLayer)
           el.dataset.status = b.status
-          el.dataset.rank = String(STATUS_RANK[b.status])
+          el.dataset.rank = String(labelRankOf(b))
           el.dataset.sel = isSel ? '1' : '0'
           el.dataset.base = baseLayer
           el.style.zIndex = zIndex
@@ -430,7 +469,7 @@ export default function MapViewGL() {
         el.style.zIndex = zIndex
         el.dataset.id = b.id
         el.dataset.status = b.status
-        el.dataset.rank = String(STATUS_RANK[b.status])
+        el.dataset.rank = String(labelRankOf(b))
         el.dataset.sel = isSel ? '1' : '0'
         el.dataset.base = baseLayer
         el.dataset.hover = '0'
@@ -476,7 +515,7 @@ export default function MapViewGL() {
       {/* 로딩 오버레이 — 최초 실시간 자료 수신 전 */}
       {!liveLoadedOnce && (
         <div style={{ position: 'absolute', inset: 0, zIndex: 950, display: 'flex', flexDirection: 'column',
-          alignItems: 'center', justifyContent: 'center', gap: 10, background: 'rgba(7,11,19,0.6)' }}>
+          alignItems: 'center', justifyContent: 'center', gap: 10, background: 'rgba(15,20,27,0.86)' }}>
           <div style={{ width: 24, height: 24, borderRadius: '50%', border: '2px solid var(--line)',
             borderTopColor: 'var(--accent)', animation: 'spin 0.9s linear infinite' }} />
           <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--t-hi)' }}>부이 실시간 자료를 불러오는 중…</div>
@@ -501,25 +540,28 @@ export default function MapViewGL() {
         </div>
       )}
 
-      {/* 범례 — 항상 표시하는 작은 고정 패널. 설명 문구·형태명 텍스트·카운트 없이 글리프+색
-          스와치가 스스로 설명하게 한다(잔텍스트 최소화). 좌하단 고정(2026-07-15 재지시로 §11 우측
-          이동안 취소 — 챗 FAB 는 우하단이라 반대 코너로 겹침 없음). SE 연안 부이를 가리지 않도록 배치. */}
+      {/* 범례 — 바다누리식 정돈 박스(§16-추가): 형태=종류 / 색=상태, 색스와치+라벨 세로 스택.
+          항상 표시하는 작은 고정 패널, 잔텍스트 최소화(설명 문구·카운트 없음). 좌하단 고정
+          (2026-07-15 재지시 §11 — 챗 FAB 는 우하단이라 반대 코너로 겹침 없음). */}
       <div style={{ position: 'absolute', left: 12, bottom: 34, zIndex: 900, animation: 'fade-in 0.5s ease both' }}>
-        <div className="map-legend" style={{ borderRadius: 9, padding: '9px 13px', display: 'flex', flexDirection: 'column', gap: 7 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 13, flexWrap: 'wrap' }}>
+        <div className="map-legend" style={{ borderRadius: 10, padding: '10px 13px 11px', display: 'flex', flexDirection: 'column', gap: 9, minWidth: 150 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: '0.02em', color: 'var(--t-lo)' }}>모양 = 부이 종류</span>
             {CATEGORY_ORDER.map(cat => (
-              <span key={cat} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                <BuoyGlyph category={cat} fill="var(--t-hi)" stroke="rgba(255,255,255,0.4)" strokeWidth={1.2} size={14} />
+              <span key={cat} style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                <BuoyGlyph category={cat} fill="var(--t-mid)" stroke="var(--line)" strokeWidth={1.1} size={13} />
                 <span style={{ fontSize: 13, color: 'var(--t-hi)', fontWeight: 600, whiteSpace: 'nowrap' }}>{CATEGORY_LABEL[cat]}</span>
               </span>
             ))}
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 13, flexWrap: 'wrap',
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6,
             borderTop: '1px solid var(--line)', paddingTop: 7 }}>
+            <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: '0.02em', color: 'var(--t-lo)' }}>색 = 수신 상태</span>
             {(['정상', '지연', '미수신'] as BuoyStatus[]).map(st => (
-              <span key={st} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+              <span key={st} style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
                 <span className={st === '미수신' ? 'buoy-marker-pulse-alert' : st === '지연' ? 'buoy-marker-pulse' : undefined}
-                  style={{ width: 9, height: 9, borderRadius: '50%', background: STATUS_HEX[st], flexShrink: 0 }} />
+                  style={{ width: 9, height: 9, borderRadius: '50%', background: STATUS_HEX[st], flexShrink: 0,
+                    border: '1px solid rgba(255,255,255,0.9)', boxShadow: '0 0 0 1px ' + STATUS_HEX[st] + '55' }} />
                 <span style={{ fontSize: 13, color: 'var(--t-hi)', fontWeight: 600, whiteSpace: 'nowrap' }}>{STATUS_LABEL[st]}</span>
               </span>
             ))}
@@ -527,9 +569,13 @@ export default function MapViewGL() {
         </div>
       </div>
 
-      {/* 저작권 표기 (attributionControl 대체 — 최소 표기, 지도 규약상 관례적으로 작게 유지) */}
-      <div style={{ position: 'absolute', bottom: 4, left: 8, zIndex: 900, fontSize: 11, color: 'rgba(255,255,255,0.55)',
-        textShadow: '0 1px 2px rgba(0,0,0,0.85)', pointerEvents: 'none' }}>
+      {/* 저작권 표기 (attributionControl 대체 — 최소 표기, 지도 규약상 관례적으로 작게 유지).
+          베이스 레이어별로 문자색을 뒤집는다 — 라이트 벡터맵 위엔 어두운 글자+밝은 헤일로,
+          위성 이미지 위엔 흰 글자+어두운 헤일로. */}
+      <div style={{ position: 'absolute', bottom: 4, left: 8, zIndex: 900, fontSize: 11,
+        color: baseLayer === 'light' ? 'rgba(20,33,46,0.62)' : 'rgba(255,255,255,0.6)',
+        textShadow: baseLayer === 'light' ? '0 1px 1px rgba(255,255,255,0.7)' : '0 1px 2px rgba(0,0,0,0.85)',
+        pointerEvents: 'none' }}>
         {ATTRIBUTION[baseLayer]}
       </div>
     </div>
@@ -537,10 +583,11 @@ export default function MapViewGL() {
 }
 
 function LayerBtn({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
+  // §20 — 지도 위에 떠 있는 컨트롤이라 카드(--bg-elev)보다 밝은 --bg-float 로 표고(범례·줌컨트롤과 동일 톤).
   return (
     <button onClick={onClick} aria-pressed={active} style={{
       padding: '7px 14px', borderRadius: 6, cursor: 'pointer', fontSize: 13, fontWeight: 600,
-      background: active ? 'var(--accent-100)' : 'var(--bg-elev)',
+      background: active ? 'var(--accent-100)' : 'var(--bg-float)',
       border: active ? '1px solid var(--accent-dim)' : '1px solid var(--line)',
       color: active ? 'var(--accent-h)' : 'var(--t-mid)',
       boxShadow: 'var(--shadow-card)',

@@ -96,3 +96,14 @@ export function relativeFromMinutes(minutesSince: number | null): string {
   if (hours < 24) return `${hours}시간 전`
   return `${Math.floor(hours / 24)}일 전`
 }
+
+/** relativeFromMinutes 의 초압축판(§19 통합 리스트 행) — "전" 접미사 없이 값만
+ *  (예 "42분"·"3시간"·"2일") → 우측 정렬 컬럼에서 폭을 아낀다. 의미는 동일, 표기만 더 조밀하다. */
+export function compactElapsed(minutesSince: number | null): string {
+  if (minutesSince == null || !isFinite(minutesSince)) return '—'
+  if (minutesSince < 1) return '방금'
+  if (minutesSince < 60) return `${Math.round(minutesSince)}분`
+  const hours = Math.floor(minutesSince / 60)
+  if (hours < 24) return `${hours}시간`
+  return `${Math.floor(hours / 24)}일`
+}

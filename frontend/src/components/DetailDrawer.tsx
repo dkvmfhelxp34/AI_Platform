@@ -34,15 +34,21 @@ import {
 } from '../types'
 
 // index.css 의 CSS 변수와 반드시 일치시킬 것(Recharts SVG 속성에는 hex 리터럴을 직접 넣는다)
-// 탈-네온 패스(2026-07-15): 시그니처 시안 → 채도 낮춘 마린 스틸-틸. 예측·QC 색도 전반적으로 톤다운.
-const ACCENT_HEX = '#5B96A0'    // 관측 — 절제된 액센트(마린 스틸-틸)
-const FORECAST_HEX = '#D3A467'  // 예측(점선) — 저채도 앰버, 관측(틸)과 뚜렷이 구분되는 난색
-const QC_INST_HEX = '#D9808C'   // 관측기관 QC 플래그(저채도 로즈)
-const QC_AI_HEX = '#9C8ED1'     // 알고리즘(AI) 이상감지(저채도 바이올렛) — 기관 QC 와 다른 색으로 구분
-const GRID_HEX = '#3E4F5C'      // 그리드라인 — 플롯면(PLOT_BG_HEX)보다 한 톤 밝게, 옅지만 확실히 보이도록
-const LINE_HEX = '#34434F'
-const TLO_HEX = '#82919E'
-const PLOT_BG_HEX = '#2B3947'   // 플롯 영역 배경(카드보다 한 단 밝은 면) — dot cutout 스트로크와 동일 색
+// 균형 다크 재스킨 패스(2026-07-16, §17) + 정통 다크 엘리베이션 정정(§20): RISA식 그리드·축·단위
+// 구조는 유지하되, 플롯면은 카드(--bg-elev)보다 밝은 최고 엘리베이션 --bg-float 로 "떠 있는" 분석
+// 표면을 살린다(팝업·툴팁과 동일 티어 — 아래 PLOT_BG_HEX 참고).
+const ACCENT_HEX = '#4E9AC9'    // 관측 — 마린 블루 실선(index.css --accent)
+const FORECAST_HEX = '#DDA53B'  // 예측(점선) — 앰버, 관측(블루)·지연상태색과 구분되는 난색
+const QC_INST_HEX = '#E0699A'   // 관측기관 QC 플래그(로즈) — 다크 플롯 위 대비 확보를 위해 밝게
+const QC_AI_HEX = '#9B84E8'     // 알고리즘(AI) 이상감지(바이올렛) — 기관 QC 와 다른 색으로 구분
+const GRID_HEX = '#3A4756'      // 그리드라인(수평) — 다크 플롯면 위 옅지만 확실히 보이는 수평 그리드
+const LINE_HEX = '#47576A'
+const TLO_HEX = '#B7C4D1'
+const AXIS_HEX = '#C2CEDA'      // 축 눈금(1단 시각) — §18-1 "축·눈금 밝게(--t-mid)", TLO_HEX보다 한 단 밝게
+const CROSSHAIR_HEX = 'rgba(226,232,240,0.55)' // hover 크로스헤어 — 시리즈색과 겹치지 않는 중립 가이드선
+// 플롯 영역 배경 — §20: 차트 플롯은 팝업/툴팁과 같은 최고 엘리베이션(--bg-float #2F3C4B) 티어.
+// 카드(--bg-elev #26313E)보다 확실히 밝아 "떠 있는" 분석 표면으로 읽힌다 — dot cutout 스트로크와 동일 색.
+const PLOT_BG_HEX = '#2F3C4B'
 
 const METRICS: { key: TimeseriesMetric; label: string; unit: string }[] = [
   { key: 'wave', label: '파고', unit: 'm' },
@@ -84,6 +90,32 @@ function mmdd(t: string): string {
 }
 function fullDt(t: string): string {
   return t && t.length >= 16 ? `${mmdd(t)} ${hhmm(t)}` : t
+}
+
+// ── X축 2단 눈금(§18-1) — 윗줄 시각(HH:MM) / 아랫줄 날짜(MM/DD). "진짜 계기 플롯"(NDBC/Grafana)
+// 처럼 시간·날짜 경계를 한 눈금에서 동시에 읽게 한다. Recharts 커스텀 tick 렌더러.
+function XAxisTwoLineTick(props: { x?: number; y?: number; payload?: { value: string } }) {
+  const { x = 0, y = 0, payload } = props
+  const t = payload?.value ?? ''
+  if (!t) return null
+  return (
+    <g transform={`translate(${x},${y})`}>
+      <text x={0} y={0} dy={13} textAnchor="middle" fontSize={13} fontWeight={600} fill={AXIS_HEX} fontFamily="var(--font-ui)">{hhmm(t)}</text>
+      <text x={0} y={0} dy={27} textAnchor="middle" fontSize={12} fontWeight={500} fill={TLO_HEX} fontFamily="var(--font-ui)">{mmdd(t)}</text>
+    </g>
+  )
+}
+
+// ── 범례 색칩(§18-1) — 라인 스와치(실선/점선) + 라벨. 축 색상 의존 없이 관측/예측을 즉시 구분.
+function LegendChip({ color, label, dashed }: { color: string; label: string; dashed?: boolean }) {
+  return (
+    <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 600, color: 'var(--t-mid)', whiteSpace: 'nowrap' }}>
+      <svg width="16" height="8" viewBox="0 0 16 8" aria-hidden="true" style={{ flexShrink: 0 }}>
+        <line x1="1" y1="4" x2="15" y2="4" stroke={color} strokeWidth="2" strokeDasharray={dashed ? '4 2.4' : undefined} strokeLinecap="round" />
+      </svg>
+      {label}
+    </span>
+  )
 }
 
 function downsample<T>(arr: T[], max: number): T[] {
@@ -205,7 +237,7 @@ export default function DetailDrawer() {
     <aside className="detail-drawer" style={{
       width: 'clamp(490px, 34vw, 620px)', flexShrink: 0, background: 'var(--bg-panel)',
       borderLeft: '1px solid var(--line)', display: 'flex', flexDirection: 'column', overflow: 'hidden',
-      boxShadow: '-6px 0 24px rgba(0,0,0,0.38)',
+      boxShadow: '-6px 0 24px rgba(0,0,0,0.35)',
     }}>
       {!buoy ? (
         <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--t-lo)', fontSize: 14 }}>
@@ -457,6 +489,19 @@ function TimeseriesSection({ buoy, range, setRange, metric, setMetric, ts, loadi
 
   const currentVal = points.length ? points[points.length - 1][metric] : null
 
+  // §18-1 — 관측선에 "표본임을 보여주는" 작은 점 마커를 찍되, 장기 구간(30d/1y)처럼 표본이 많으면
+  // 자동으로 솎아 과밀을 막는다(항상 최대 ~60개 점만 그림 + 마지막 관측점은 항상 표시).
+  const obsCount = displayPoints.length
+  const dotStride = Math.max(1, Math.ceil(obsCount / 60))
+  const renderObsDot = useMemo(() => (
+    (dotProps: { cx?: number; cy?: number; index?: number; payload?: ChartRow }) => {
+      const { cx, cy, index = 0, payload } = dotProps
+      if (payload?.obs == null) return <g key={`d-${index}`} />
+      if (index % dotStride !== 0 && index !== obsCount - 1) return <g key={`d-${index}`} />
+      return <circle key={`d-${index}`} cx={cx} cy={cy} r={1.8} fill={ACCENT_HEX} stroke={PLOT_BG_HEX} strokeWidth={1} />
+    }
+  ), [dotStride, obsCount])
+
   // §14 — 이 지점이 실제 제공하는 지표만 탭으로 노출(순서는 METRICS 고정 순서 유지).
   // available_metrics 가 아직 없으면(방어적 케이스) 전체 4종으로 폴백.
   const availMetrics = buoy.available_metrics?.length ? buoy.available_metrics : METRICS.map(m => m.key)
@@ -503,45 +548,47 @@ function TimeseriesSection({ buoy, range, setRange, metric, setMetric, ts, loadi
           <EmptyState title="이력 없음" sub="이 지점은 이력이 제공되지 않습니다" />
         ) : (
           <>
-            {/* 단위 태그 — Y축이 무엇을 나타내는지 항상 좌상단에서 즉시 확인 가능. 플롯면(PLOT_BG_HEX,
-                아래 참고)보다 확실히 어둡게 대비를 줘 카드/플롯 어느 쪽 위에서도 또렷이 읽힌다. */}
+            {/* 차트 제목 + 범례(색칩)(§18-1) — "지점명 · 지표(단위)" 제목 + 우상단 색칩 범례(관측/
+                예측). 축 색상에 의존하지 않고 라인 스타일(실선/점선)로도 구분되는 진짜 계기 플롯
+                범례(NDBC/Grafana 참고). '예측(모의 24h)' 고지 문구는 범례 라벨 안에 유지(신뢰 표기). */}
+            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 10 }}>
+              <div style={{ fontSize: 14.5, fontWeight: 700, color: 'var(--t-hi)', letterSpacing: '-0.005em' }}>
+                {buoy.name} <span style={{ color: 'var(--t-lo)', fontWeight: 500 }}>·</span> {metricCfg.label} <span style={{ color: 'var(--t-mid)', fontWeight: 600 }}>({metricCfg.unit})</span>
+              </div>
+              <div style={{ display: 'flex', gap: 14, alignItems: 'center' }}>
+                <LegendChip color={ACCENT_HEX} label="관측" />
+                {forecastActive && <LegendChip color={FORECAST_HEX} label="예측(모의 24h)" dashed />}
+              </div>
+            </div>
+
+            {/* 플롯 면 — §20: 카드(--bg-elev)보다 밝은 --bg-float(팝업·툴팁과 동일 최고 엘리베이션)로
+                "떠 있는" 분석 표면을 준다. 그리드·데이터 잉크가 이 면 위에서 대비를 갖는다. */}
+            <div style={{ background: PLOT_BG_HEX, borderRadius: 8, padding: '20px 6px 2px', position: 'relative' }}>
+            {/* 단위 태그 — Y축이 무엇을 나타내는지 플롯 좌상단에서 즉시 확인 가능(제목의 단위 표기와
+                이중 확인). 플롯면보다 확실히 어둡게 대비를 줘 또렷이 읽힌다. */}
             <div className="tnum" style={{
               position: 'absolute', top: 12, left: 16, zIndex: 2, fontSize: 13, fontWeight: 700,
               color: 'var(--t-mid)', background: 'var(--bg-panel)', border: '1px solid var(--line)',
               borderRadius: 5, padding: '2px 7px', pointerEvents: 'none',
             }}>{metricCfg.unit}</div>
-
-            {forecastActive && (
-              <div className="tnum" style={{
-                position: 'absolute', top: 12, right: 16, zIndex: 2, fontSize: 13, fontWeight: 700,
-                color: FORECAST_HEX, background: 'var(--bg-panel)', border: `1px solid ${FORECAST_HEX}55`,
-                borderRadius: 5, padding: '2px 8px', pointerEvents: 'auto', cursor: 'default',
-              }}
-                title="음영 밴드=예측 불확실성 구간(통계 보정 없는 시연용 참고치, 리드타임이 길수록 벌어짐)"
-              >┄ 예측(모의 24h)</div>
-            )}
-
-            {/* 플롯 면 — 카드(--bg-elev)보다 한 톤 밝은 --bg-hover 로 "종이" 느낌의 구분된 표면을 준다
-                (탈-네온 시계열 가독성 패스). 그리드·데이터 잉크가 이 면 위에서 대비를 갖는다. */}
-            <div style={{ background: PLOT_BG_HEX, borderRadius: 8, padding: '20px 6px 2px' }}>
-            <ResponsiveContainer width="100%" height={256}>
-              <ComposedChart data={chartData} margin={{ top: 6, right: 10, left: 2, bottom: 0 }}>
+            <ResponsiveContainer width="100%" height={264}>
+              <ComposedChart data={chartData} margin={{ top: 6, right: 10, left: 2, bottom: 2 }}>
                 <defs>
                   <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
                     <stop offset="0%" stopColor={ACCENT_HEX} stopOpacity={0.32} />
                     <stop offset="100%" stopColor={ACCENT_HEX} stopOpacity={0} />
                   </linearGradient>
                 </defs>
-                <CartesianGrid stroke={GRID_HEX} strokeDasharray="0" vertical={false} />
-                <XAxis dataKey="t" tickFormatter={range === '24h' ? hhmm : mmdd}
-                  tick={{ fontSize: 13, fill: TLO_HEX, fontFamily: 'var(--font-ui)' }}
+                {/* 그리드 = 수평(뚜렷) + 세로(옅게, 시간/일 경계 느낌) — §18-1 "진짜 계기 플롯" 체크리스트 */}
+                <CartesianGrid horizontal={{ stroke: GRID_HEX }} vertical={{ stroke: GRID_HEX, strokeOpacity: 0.5 }} strokeDasharray="0" />
+                <XAxis dataKey="t" tick={<XAxisTwoLineTick />} height={34}
                   axisLine={{ stroke: LINE_HEX }} tickLine={false}
-                  interval={Math.max(0, Math.floor(chartData.length / 6) - 1)} minTickGap={28} />
-                <YAxis tick={{ fontSize: 13, fill: TLO_HEX, fontFamily: 'var(--font-ui)' }}
+                  interval={Math.max(0, Math.floor(chartData.length / 6) - 1)} minTickGap={34} />
+                <YAxis tick={{ fontSize: 13, fill: AXIS_HEX, fontFamily: 'var(--font-ui)' }}
                   axisLine={false} tickLine={false} width={38} domain={[yMin, yMax]}
                   allowDecimals={step < 1} tickCount={5} />
                 <Tooltip content={<ChartTooltip unit={metricCfg.unit} metricLabel={metricCfg.label} decimals={DECIMALS[metric]} />}
-                  cursor={{ stroke: ACCENT_HEX, strokeWidth: 1, strokeDasharray: '3 3' }} />
+                  cursor={{ stroke: CROSSHAIR_HEX, strokeWidth: 1, strokeDasharray: '3 3' }} />
 
                 {/* 정상범위/특보 임계선 — 파고·풍속만(공개된 KMA 특보 정량기준 근사치). 주의보 라벨은
                     "위" 정렬로, 경보 라벨은 "아래" 정렬로 서로 어긋나게 배치해 두 선이 가까워도
@@ -564,9 +611,9 @@ function TimeseriesSection({ buoy, range, setRange, metric, setMetric, ts, loadi
                     label={{ value: '지금', position: 'insideBottomLeft', fill: 'var(--t-hi)', fontSize: 13, fontWeight: 700 }} />
                 )}
 
-                {/* 관측 — 부드러운 그라디언트 Area */}
+                {/* 관측 — 부드러운 그라디언트 Area + 표본점 마커(§18-1, 많으면 자동 솎임 — renderObsDot) */}
                 <Area type="monotone" dataKey="obs" stroke={ACCENT_HEX} strokeWidth={2}
-                  fill={`url(#${gradId})`} dot={false} activeDot={{ r: 4, fill: ACCENT_HEX, stroke: PLOT_BG_HEX, strokeWidth: 2 }}
+                  fill={`url(#${gradId})`} dot={renderObsDot} activeDot={{ r: 4, fill: ACCENT_HEX, stroke: PLOT_BG_HEX, strokeWidth: 2 }}
                   isAnimationActive={false} connectNulls={false} />
 
                 {/* 예측 불확실성 밴드 — 스택 Area 2겹(투명 base=fcLower + 채색 폭=fcWidth)으로
@@ -598,6 +645,8 @@ function TimeseriesSection({ buoy, range, setRange, metric, setMetric, ts, loadi
                 ))}
               </ComposedChart>
             </ResponsiveContainer>
+            {/* 축 아래 "KST" 표기(§18-1) — NDBC 계기 플롯의 시간대(PDT) 캡션 관행 */}
+            <div className="tnum" style={{ textAlign: 'right', fontSize: 12, fontWeight: 600, color: TLO_HEX, padding: '0 10px 5px 0' }}>KST</div>
             </div>
           </>
         )}
@@ -664,8 +713,9 @@ function ChartTooltip({ active, payload, label, unit, metricLabel, decimals }: {
   const val = row.obs ?? row.fc
   if (val == null) return null
   const isForecast = row.obs == null && row.fc != null
+  // §20 — 툴팁은 float 엘리베이션(팝업/차트 플롯과 동일 최고 티어)
   return (
-    <div style={{ background: 'var(--bg-panel)', border: '1px solid var(--border-strong)', borderRadius: 7,
+    <div style={{ background: 'var(--bg-float)', border: '1px solid var(--border-strong)', borderRadius: 7,
       padding: '8px 11px', boxShadow: 'var(--shadow-overlay)' }}>
       <div className="tnum" style={{ fontSize: 13, fontWeight: 700, color: 'var(--t-hi)', whiteSpace: 'nowrap' }}>
         {fullDt(label ?? row.t)}

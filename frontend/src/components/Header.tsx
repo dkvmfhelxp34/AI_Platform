@@ -105,7 +105,7 @@ function BrandMark() {
   return (
     <svg width="20" height="20" viewBox="0 0 28 28" fill="none" aria-hidden="true">
       {/* 부표 동체 + 수면선 */}
-      <circle cx="9" cy="20" r="4.1" fill="rgba(91,150,160,0.18)" stroke="var(--accent)" strokeWidth="1.7" />
+      <circle cx="9" cy="20" r="4.1" fill="rgba(78,154,201,0.18)" stroke="var(--accent)" strokeWidth="1.7" />
       <line x1="2.5" y1="24.6" x2="15.5" y2="24.6" stroke="var(--accent)" strokeWidth="1.3" strokeLinecap="round" opacity="0.4" />
       {/* 안테나 마스트 */}
       <line x1="9" y1="16.2" x2="9" y2="8.2" stroke="var(--accent)" strokeWidth="1.6" strokeLinecap="round" />

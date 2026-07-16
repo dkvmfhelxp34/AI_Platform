@@ -1,25 +1,23 @@
 /**
- * LeftPanel — Wave 3b "이상 우선(exception-first)" 하단 재설계(ui_revision_notes §8).
- * - 상단(유지): 상태 3타일(필터와 동일 소스) + 상태·종류 체크박스 필터 — 사용자가 마음에 들어했던 부분.
- * - 하단(재설계): 키 큰 카드 리스트를 폐기하고
- *     ① 하이라이트 칩(최대 파고·최대 풍속 지점)
- *     ② "주의 필요" 섹션(지연·미수신을 심각도순으로 부각, 평시엔 "현재 이상 없음")
- *     ③ 전체 컴팩트 행 테이블(지점·(기관명)·상태·파고·수온·갱신, 정렬 토글 5종)
- *   순서로 배치한다.
- * - 스파크라인 비용 관리: 137개소 전체 행에 개별 시계열 fetch 를 붙이면 비용이 크므로, 실제 미니
- *   스파크라인(WaveSparkline, 자체 fetch)은 개수가 적은 "주의 필요" 행에만 붙이고, 전체 리스트의
- *   나머지 행은 **추가 API 호출 없이** store.prevWaveById(직전 폴링 스냅샷) 비교로 만든 가벼운
- *   추세 화살표(▲/▼)로 대체한다 — "가능하면 스파크라인"의 실용적 절충.
- * - 기관명: 모든 행에 "(기상청)"/"(국립해양조사원)" 병기(종류 코드만 표기하던 이전 방식 폐기).
+ * LeftPanel — §19(2026-07-16) "통합 리스트(깔끔)" 하단 재설계. 사용자가 이전 판(키 큰 예외
+ * 카드+스파크라인 섹션)을 계속 마음에 안 들어 해 폐기하고, 아래 하나의 밀도 있는 스크롤 리스트로
+ * 대체한다:
+ * - 상단(유지): 상태 3타일(필터와 동일 소스) + 상태·종류 체크박스 필터 + 하이라이트 칩(최대 풍속).
+ * - 검색/정렬 툴바(유지, 배치만 리스트 바로 위로 정리).
+ * - **단일 통합 리스트**: ① 예외 블록 — 지연·미수신만 심각도순, 행 배경에 은은한 상태 틴트로 표시
+ *   (큰 카드·스파크라인 없이 한 줄), ② 카테고리 그룹(해양기상부이/파고부이/해양관측부이) — 얇은
+ *   헤더(라벨+카운트) 뒤에 **정상 지점만**(중복 회피, 예외는 위 블록에만) 컴팩트 한 줄 행.
+ * - 행은 34~40px 높이의 단일 라인(글리프+이름+(기관)+우측 값)으로 통일 — 전 UnifiedRow 하나가
+ *   variant(exception|normal)로 두 톤을 렌더한다.
+ * - 기관명: 모든 행에 "(기상청)"/"(국립해양조사원)" 병기(기존 방침 유지).
  */
 import { useMemo, useState, type ReactNode } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { useStore } from '../store'
-import { liveBuoys, relativeFromMinutes, type MergedBuoy } from '../utils/buoys'
+import { liveBuoys, compactElapsed, type MergedBuoy } from '../utils/buoys'
 import { STATUS_HEX, STATUS_LABEL, SOURCE_LABEL, type BuoyStatus } from '../types'
 import { categoryOf, CATEGORY_LABEL, CATEGORY_ORDER, type BuoyCategory } from '../utils/buoyCategory'
 import BuoyGlyph from './BuoyGlyph'
-import WaveSparkline from './WaveSparkline'
 
 type SortMode = 'severity' | 'wave' | 'wind' | 'freshness' | 'name'
 
@@ -32,7 +30,7 @@ const SORT_MODES: { key: SortMode; label: string }[] = [
 ]
 const STATUS_RANK: Record<BuoyStatus, number> = { '미수신': 0, '지연': 1, '정상': 2 }
 const STATUS_ORDER: BuoyStatus[] = ['정상', '지연', '미수신']
-const MAX_EXCEPTION_SPARKLINES = 6 // 예외 행 스파크라인 fetch 상한(비용 관리)
+const EXCEPTION_CAP = 14 // 예외 블록 최대 표시 행 수(그 이상은 "외 N건 더")
 
 function sortBuoys(list: MergedBuoy[], mode: SortMode): MergedBuoy[] {
   const byName = (a: MergedBuoy, b: MergedBuoy) => a.name.localeCompare(b.name, 'ko')
@@ -65,14 +63,13 @@ function sortBuoys(list: MergedBuoy[], mode: SortMode): MergedBuoy[] {
 export default function LeftPanel() {
   const {
     stations, live, stationsError, liveError, liveLoadedOnce, selectedStationId, requestFlyTo,
-    visibleStatuses, visibleCategories, prevWaveById,
+    visibleStatuses, visibleCategories,
     toggleStatus, setAllStatuses, toggleCategory, setAllCategories, resetFilters,
   } = useStore(
     useShallow(s => ({
       stations: s.stations, live: s.live, stationsError: s.stationsError, liveError: s.liveError,
       liveLoadedOnce: s.liveLoadedOnce, selectedStationId: s.selectedStationId, requestFlyTo: s.requestFlyTo,
       visibleStatuses: s.visibleStatuses, visibleCategories: s.visibleCategories,
-      prevWaveById: s.prevWaveById,
       toggleStatus: s.toggleStatus, setAllStatuses: s.setAllStatuses,
       toggleCategory: s.toggleCategory, setAllCategories: s.setAllCategories,
       resetFilters: s.resetFilters,
@@ -117,11 +114,39 @@ export default function LeftPanel() {
     return sortBuoys(list, sortMode)
   }, [buoys, visibleStatuses, visibleCategories, search, sortMode])
 
-  // 주의 필요 — 필터·검색과 무관하게 전체 데이터셋 기준(필터로 지연/미수신을 숨겨도 경보 자체는 계속 보이게)
-  const exceptions = useMemo(
-    () => buoys.filter(b => b.status !== '정상').sort((a, b) => STATUS_RANK[a.status] - STATUS_RANK[b.status] || a.name.localeCompare(b.name, 'ko')),
-    [buoys]
-  )
+  // §19 — 통합 리스트의 카테고리 그룹은 "정상"만 담는다(§18-3 그룹 구조 유지 + 예외 중복 회피 —
+  // 지연/미수신은 아래 exceptions 블록에서만 보여준다). `filtered` 는 이미 정렬돼 있으므로
+  // 카테고리별로 나눠도(stable partition) 그룹 내부 순서는 선택된 정렬 기준을 그대로 유지한다.
+  const grouped = useMemo(() => {
+    const map = new Map<BuoyCategory, MergedBuoy[]>()
+    for (const cat of CATEGORY_ORDER) map.set(cat, [])
+    for (const b of filtered) {
+      if (b.status !== '정상') continue
+      map.get(categoryOf(b))!.push(b)
+    }
+    return map
+  }, [filtered])
+
+  const groupedCount = useMemo(() => {
+    let n = 0
+    grouped.forEach(list => { n += list.length })
+    return n
+  }, [grouped])
+
+  // 주의 필요(예외 블록) — 상태·종류 체크박스 필터와는 무관하게 항상 노출(필터로 지연/미수신을
+  // 숨겨도 경보 자체는 계속 보이게), 단 검색어는 통합 리스트 전체(예외+그룹)에 공통 적용한다.
+  const exceptions = useMemo(() => {
+    let list = buoys.filter(b => b.status !== '정상')
+    if (search.trim()) {
+      const q = search.trim().toLowerCase()
+      list = list.filter(b =>
+        b.name.toLowerCase().includes(q) ||
+        b.id.toLowerCase().includes(q) ||
+        (b.name_en ?? '').toLowerCase().includes(q)
+      )
+    }
+    return list.sort((a, b) => STATUS_RANK[a.status] - STATUS_RANK[b.status] || a.name.localeCompare(b.name, 'ko'))
+  }, [buoys, search])
 
   const maxWind = useMemo(() => {
     let best: { name: string; value: number; id: string; source: MergedBuoy['source'] } | null = null
@@ -138,7 +163,7 @@ export default function LeftPanel() {
   return (
     <aside style={{ width: 'clamp(320px, 21vw, 420px)', flexShrink: 0, background: 'var(--bg-panel)',
       borderRight: '1px solid var(--line)', display: 'flex', flexDirection: 'column', overflow: 'hidden',
-      boxShadow: '6px 0 24px rgba(0,0,0,0.38)', position: 'relative', zIndex: 1 }}>
+      boxShadow: '6px 0 24px rgba(0,0,0,0.35)', position: 'relative', zIndex: 1 }}>
 
       {/* ── Status summary — 상태 3타일(필터와 동일 소스로 클릭 시 토글) ── */}
       <div style={{ background: 'var(--bg-base)', borderBottom: '1px solid var(--line)', padding: '15px 16px 13px', flexShrink: 0 }}>
@@ -184,7 +209,7 @@ export default function LeftPanel() {
         {CATEGORY_ORDER.map(cat => (
           <FilterCheckRow key={cat} checked={visibleCategories.has(cat)} onChange={() => toggleCategory(cat)}
             label={CATEGORY_LABEL[cat]} count={categoryCounts[cat]}
-            icon={<BuoyGlyph category={cat} fill="var(--t-mid)" stroke="rgba(255,255,255,0.25)" size={13} />} />
+            icon={<BuoyGlyph category={cat} fill="var(--t-mid)" size={13} />} />
         ))}
       </div>
 
@@ -197,41 +222,9 @@ export default function LeftPanel() {
         </div>
       )}
 
-      {/* ── 주의 필요(exception-first) ── */}
-      {!loading && (
-        <div style={{ padding: '11px 12px 0', flexShrink: 0 }}>
-          <div className="eyebrow" style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
-            주의 필요
-            {exceptions.length > 0 && (
-              <span className="tnum" style={{ fontSize: 13, fontWeight: 700, color: 'var(--lost)',
-                background: 'var(--lost-soft)', border: '1px solid var(--lost-border)', borderRadius: 10, padding: '0 6px' }}>
-                {exceptions.length}
-              </span>
-            )}
-          </div>
-          {exceptions.length === 0 ? (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--ok-soft)',
-              border: '1px solid var(--ok-border)', borderRadius: 8, padding: '10px 12px', marginBottom: 12 }}>
-              <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--ok)', flexShrink: 0 }} />
-              <span style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--t-mid)' }}>현재 이상 없음 — 모든 부이 정상 수신</span>
-            </div>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginBottom: 12 }}>
-              {exceptions.slice(0, 10).map((b, i) => (
-                <ExceptionRow key={b.id} b={b} withSparkline={i < MAX_EXCEPTION_SPARKLINES}
-                  isSel={b.id === selectedStationId} onClick={() => requestFlyTo(b.id)} />
-              ))}
-              {exceptions.length > 10 && (
-                <div style={{ fontSize: 13, color: 'var(--t-lo)', textAlign: 'center', padding: '2px 0' }}>외 {exceptions.length - 10}건 더</div>
-              )}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ── Toolbar — 검색 + 정렬 세그먼트 ── */}
+      {/* ── Toolbar — 검색 + 정렬(한 줄로 압축, §19 밀도 확보) ── */}
       <div style={{ borderBottom: '1px solid var(--line)', borderTop: '1px solid var(--line)',
-        padding: '11px 16px', flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 9 }}>
+        padding: '8px 12px', flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 6 }}>
         <div style={{ position: 'relative' }}>
           <svg width="14" height="14" viewBox="0 0 13 13" fill="none"
             style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }}>
@@ -245,9 +238,9 @@ export default function LeftPanel() {
               fontSize: 14, outline: 'none', fontFamily: 'inherit' }} />
         </div>
 
-        <div>
-          <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--t-lo)', marginBottom: 5 }}>정렬</div>
-          <div className="segctl" role="group" aria-label="목록 정렬 기준">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span className="eyebrow" style={{ flexShrink: 0 }}>정렬</span>
+          <div className="segctl" role="group" aria-label="목록 정렬 기준" style={{ flex: 1 }}>
             {SORT_MODES.map(m => (
               <button key={m.key} className="segctl-btn" aria-pressed={sortMode === m.key}
                 onClick={() => setSortMode(m.key)}>{m.label}</button>
@@ -256,14 +249,47 @@ export default function LeftPanel() {
         </div>
       </div>
 
-      {/* ── 전체 컴팩트 리스트 ── */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '5px 6px 10px' }}>
-        {filtered.map(b => (
-          <BuoyRow key={b.id} b={b} isSel={b.id === selectedStationId} onClick={() => requestFlyTo(b.id)}
-            prevWave={prevWaveById[b.id]} />
-        ))}
+      {/* ── 통합 리스트(§19) — 예외 블록(지연·미수신, 상단 고정·틴트 행) + 카테고리 그룹(정상만,
+          얇은 헤더+카운트) 을 하나의 스크롤 영역에 담는다. 큰 카드·스파크라인 없이 34~40px 단일
+          라인 행만 사용 — "한 화면에 더 많이·깔끔하게". ── */}
+      <div style={{ flex: 1, overflowY: 'auto', padding: '2px 6px 10px' }}>
+        {exceptions.length > 0 && (
+          <>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, padding: '6px 8px 3px' }}>
+              <span className="eyebrow" style={{ color: 'var(--lost)' }}>주의 필요</span>
+              <span className="tnum" style={{ fontSize: 13, fontWeight: 700, color: 'var(--lost)',
+                background: 'var(--lost-soft)', border: '1px solid var(--lost-border)', borderRadius: 10, padding: '0 6px' }}>
+                {exceptions.length}
+              </span>
+            </div>
+            {exceptions.slice(0, EXCEPTION_CAP).map(b => (
+              <UnifiedRow key={b.id} b={b} variant="exception"
+                isSel={b.id === selectedStationId} onClick={() => requestFlyTo(b.id)} />
+            ))}
+            {exceptions.length > EXCEPTION_CAP && (
+              <div style={{ fontSize: 13, color: 'var(--t-lo)', textAlign: 'center', padding: '4px 0 2px' }}>
+                외 {exceptions.length - EXCEPTION_CAP}건 더
+              </div>
+            )}
+            <div style={{ height: 1, background: 'var(--line-soft)', margin: '6px 8px 2px' }} />
+          </>
+        )}
 
-        {filtered.length === 0 && (
+        {CATEGORY_ORDER.map(cat => {
+          const list = grouped.get(cat) ?? []
+          if (list.length === 0) return null
+          return (
+            <div key={cat}>
+              <CategoryGroupHeader label={CATEGORY_LABEL[cat]} count={list.length} />
+              {list.map(b => (
+                <UnifiedRow key={b.id} b={b} variant="normal"
+                  isSel={b.id === selectedStationId} onClick={() => requestFlyTo(b.id)} />
+              ))}
+            </div>
+          )
+        })}
+
+        {exceptions.length === 0 && groupedCount === 0 && (
           <div style={{ textAlign: 'center', padding: '36px 16px', color: 'var(--t-lo)', fontSize: 14 }}>
             {stationsError && liveError ? '데이터를 불러오지 못했습니다 — 새로고침(F5) 해주세요'
               : loading ? '목록 로딩 중…'
@@ -304,110 +330,68 @@ function HighlightChip({ label, name, value, unit, onClick }: {
   )
 }
 
-// ── 주의 필요 행(예외 — 스파크라인 포함, 소수만 렌더) ───────────────────────
-function ExceptionRow({ b, withSparkline, isSel, onClick }: {
-  b: MergedBuoy; withSparkline: boolean; isSel: boolean; onClick: () => void
+// ── 통합 리스트 행(§19) — variant='exception'(지연·미수신, 상태 틴트 배경 + "상태·경과") 과
+// variant='normal'(카테고리 그룹 소속, 정상만 + "파고·수온·경과") 을 하나의 34~40px 단일 라인으로
+// 렌더한다. 큰 카드·스파크라인 없이 스캔하기 쉬운 밀도 있는 테이블 행.
+function UnifiedRow({ b, variant, isSel, onClick }: {
+  b: MergedBuoy; variant: 'exception' | 'normal'; isSel: boolean; onClick: () => void
 }) {
   const color = STATUS_HEX[b.status]
   const category = categoryOf(b)
+  const isException = variant === 'exception'
+
   return (
     <div onClick={onClick} role="button" tabIndex={0}
-      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick() } }}
-      className="station-card" style={{
-        display: 'flex', flexDirection: 'column', gap: 6, padding: '9px 11px', borderRadius: 8, cursor: 'pointer',
-        background: isSel ? 'var(--bg-selected)' : (b.status === '미수신' ? 'var(--lost-soft)' : 'var(--delay-soft)'),
-        border: `1px solid ${isSel ? 'var(--accent-dim)' : (b.status === '미수신' ? 'var(--lost-border)' : 'var(--delay-border)')}`,
-      }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <div style={{ width: 26, height: 26, borderRadius: 7, flexShrink: 0, background: 'var(--bg-elev)',
-          border: '1px solid var(--line)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <BuoyGlyph category={category} fill={color} stroke="rgba(255,255,255,0.4)" strokeWidth={1.5} size={13} />
-        </div>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: 5 }}>
-            <span style={{ fontWeight: 700, fontSize: 14.5, color: 'var(--t-hi)',
-              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{b.name}</span>
-            <span style={{ fontSize: 13, color: 'var(--t-lo)', fontWeight: 600, whiteSpace: 'nowrap' }}>({SOURCE_LABEL[b.source]})</span>
-          </div>
-          <div className="tnum" style={{ fontSize: 13, fontWeight: 700, color, marginTop: 1 }}>
-            {STATUS_LABEL[b.status]} · {relativeFromMinutes(b.minutes_since)}
-          </div>
-        </div>
-      </div>
-      {withSparkline && <WaveSparkline source={b.source} id={b.id} width={272} height={26} />}
-    </div>
-  )
-}
-
-// ── 전체 리스트 컴팩트 행 ────────────────────────────────────────────────
-function BuoyRow({ b, isSel, onClick, prevWave }: { b: MergedBuoy; isSel: boolean; onClick: () => void; prevWave?: number | null }) {
-  const color = STATUS_HEX[b.status]
-  const category = categoryOf(b)
-  const wave = b.values.wave_height
-  const temp = b.values.water_temp
-  const trend: 'up' | 'down' | null = (wave == null || prevWave == null || wave === prevWave) ? null : (wave > prevWave ? 'up' : 'down')
-
-  return (
-    <div onClick={onClick}
-      role="button" tabIndex={0}
       title={b.obs_time ?? undefined}
       aria-label={`${b.name} ${STATUS_LABEL[b.status]}`}
       onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick() } }}
       className="station-card"
       style={{
-        display: 'flex', alignItems: 'center', gap: 9,
-        padding: '7px 10px', borderRadius: 7, cursor: 'pointer', marginBottom: 2,
-        background: isSel ? 'var(--bg-selected)' : 'transparent',
+        display: 'flex', alignItems: 'center', gap: 8,
+        padding: '7px 10px', borderRadius: 6, cursor: 'pointer', marginBottom: 1, minHeight: 20,
+        background: isSel ? 'var(--bg-selected)' : (isException ? (b.status === '미수신' ? 'var(--lost-soft)' : 'var(--delay-soft)') : 'transparent'),
         borderLeft: `2.5px solid ${isSel ? 'var(--accent)' : 'transparent'}`,
         transition: 'background 0.12s var(--ease-out), border-color 0.12s var(--ease-out)',
       }}>
-      <div style={{
-        width: 27, height: 27, borderRadius: 7, flexShrink: 0,
-        background: 'var(--bg-elev)', border: '1px solid var(--line)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-      }}>
-        <BuoyGlyph category={category} fill={color} stroke="rgba(255,255,255,0.4)" strokeWidth={1.5} size={13.5} />
+      <BuoyGlyph category={category} fill={color} size={13} />
+
+      <div style={{ flex: '1 1 auto', minWidth: 0, display: 'flex', alignItems: 'baseline', gap: 5 }}>
+        <span style={{ flex: '1 1 auto', minWidth: 0, fontWeight: 700, fontSize: 14, color: 'var(--t-hi)',
+          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{b.name}</span>
+        <span style={{ fontSize: 13, color: 'var(--t-lo)', fontWeight: 600, whiteSpace: 'nowrap', flexShrink: 0 }}>
+          ({SOURCE_LABEL[b.source]})
+        </span>
       </div>
 
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 5 }}>
-          <span style={{ fontWeight: 700, fontSize: 14.5, color: 'var(--t-hi)',
-            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{b.name}</span>
-          <span style={{ fontSize: 13, color: 'var(--t-lo)', fontWeight: 600, whiteSpace: 'nowrap', flexShrink: 0 }}>
-            ({SOURCE_LABEL[b.source]})
+      {isException ? (
+        <span className="tnum" style={{ fontSize: 13, fontWeight: 700, color, whiteSpace: 'nowrap', flexShrink: 0 }}>
+          {STATUS_LABEL[b.status]} · {compactElapsed(b.minutes_since)}
+        </span>
+      ) : (
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexShrink: 0 }}>
+          <CompactVal value={b.values.wave_height} unit="m" />
+          <CompactVal value={b.values.water_temp} unit="℃" />
+          <span className="tnum" style={{ fontSize: 13, color: 'var(--t-lo)', fontWeight: 500, minWidth: 32, textAlign: 'right' }}>
+            {compactElapsed(b.minutes_since)}
           </span>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 3 }}>
-          <span style={{ width: 6, height: 6, borderRadius: '50%', background: color, flexShrink: 0 }} />
-          <span className="tnum" style={{ fontSize: 13, color: 'var(--t-lo)', fontWeight: 500 }}>
-            {relativeFromMinutes(b.minutes_since)}
-          </span>
-        </div>
-      </div>
-
-      <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexShrink: 0 }}>
-        {wave != null ? <StatPill value={wave.toFixed(1)} unit="m" trend={trend} /> : <EmptyPill />}
-        {temp != null ? <StatPill value={temp.toFixed(1)} unit="℃" /> : <EmptyPill />}
-      </div>
+      )}
     </div>
   )
 }
 
-function StatPill({ value, unit, trend }: { value: string; unit: string; trend?: 'up' | 'down' | null }) {
+/** 파고/수온 등 수치 컬럼 — 결측은 '—'. 우측 정렬 고정폭이라 여러 행에 걸쳐 세로로 값이 정렬돼
+ *  보인다(테이블 느낌). */
+function CompactVal({ value, unit }: { value: number | null | undefined; unit: string }) {
+  if (value == null) {
+    return <span className="tnum" style={{ fontSize: 13, color: 'var(--t-lo)', minWidth: 38, textAlign: 'right' }}>—</span>
+  }
   return (
-    <div className="tnum" style={{ fontSize: 14.5, fontWeight: 700, color: 'var(--t-hi)',
-      display: 'flex', alignItems: 'baseline', gap: 2, minWidth: 40, justifyContent: 'flex-end' }}>
-      {value}
-      <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--t-lo)' }}>{unit}</span>
-      {trend && <span style={{ fontSize: 13, color: trend === 'up' ? 'var(--delay)' : 'var(--accent-h)', marginLeft: 1 }}>
-        {trend === 'up' ? '▲' : '▼'}
-      </span>}
-    </div>
+    <span className="tnum" style={{ fontSize: 14, fontWeight: 700, color: 'var(--t-hi)', minWidth: 38,
+      display: 'inline-flex', justifyContent: 'flex-end', alignItems: 'baseline', gap: 1 }}>
+      {value.toFixed(1)}<span style={{ fontSize: 13, fontWeight: 500, color: 'var(--t-lo)' }}>{unit}</span>
+    </span>
   )
-}
-
-function EmptyPill() {
-  return <div style={{ fontSize: 13, color: 'var(--t-lo)', minWidth: 40, textAlign: 'right' }}>—</div>
 }
 
 function StatReadout({ status, count, active, onClick, divider }: {
@@ -425,13 +409,27 @@ function StatReadout({ status, count, active, onClick, divider }: {
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 5 }}>
         <span style={{ width: 7, height: 7, borderRadius: '50%', background: color, flexShrink: 0,
           boxShadow: active ? `0 0 0 3px ${color}2E` : 'none', transition: 'box-shadow 0.14s' }} />
-        <span style={{ fontSize: 13, color: active ? 'var(--t-hi)' : 'var(--t-mid)', fontWeight: 600 }}>{status}</span>
+        {/* §20 — 이 텍스트는 라벨(중간 위계)이지 핵심 데이터가 아니다. 핵심 수치는 아래 count.
+            active 여부는 dot 의 glow·opacity 로 이미 전달되므로 라벨 자체를 t-hi 로 승격하지 않는다. */}
+        <span style={{ fontSize: 13, color: 'var(--t-mid)', fontWeight: 600 }}>{status}</span>
       </div>
       <div className="tnum" style={{ fontSize: 22, fontWeight: 700, lineHeight: 1,
         color: active ? color : 'var(--t-hi)', transition: 'color 0.14s' }}>
         {count}
       </div>
     </button>
+  )
+}
+
+/** 전체 리스트 카테고리 그룹 헤더(§18-3, 바다누리식) — 라벨 + 카운트 + 얇은 구분선.
+ *  필터 섹션의 FilterGroupHeader(체크박스 그룹용)와는 별개 — 이쪽은 본문 콘텐츠 섹션 헤더다. */
+function CategoryGroupHeader({ label, count }: { label: string; count: number }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'baseline', gap: 7, padding: '9px 8px 5px' }}>
+      <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--t-mid)', whiteSpace: 'nowrap' }}>{label}</span>
+      <span className="tnum" style={{ fontSize: 13, fontWeight: 700, color: 'var(--t-lo)' }}>{count}</span>
+      <span style={{ flex: 1, height: 1, background: 'var(--line-soft)', marginLeft: 2 }} />
+    </div>
   )
 }
 
@@ -468,7 +466,9 @@ function FilterCheckRow({ checked, onChange, icon, label, count }: {
         </span>
       </span>
       {icon}
-      <span style={{ flex: 1, fontSize: 13, fontWeight: 600, color: checked ? 'var(--t-hi)' : 'var(--t-lo)' }}>{label}</span>
+      {/* §20 — 필터 라벨은 항상 중간 위계(mid). 체크됨/해제됨은 체크박스 채움색으로 이미 구분되므로
+          라벨 텍스트를 t-hi 까지 승격하지 않는다(라벨은 라벨, 핵심 데이터가 아님). */}
+      <span style={{ flex: 1, fontSize: 13, fontWeight: 600, color: checked ? 'var(--t-mid)' : 'var(--t-lo)' }}>{label}</span>
       {count != null && (
         <span className="tnum" style={{ fontSize: 13, fontWeight: 700, color: checked ? 'var(--t-mid)' : 'var(--t-lo)' }}>{count}</span>
       )}

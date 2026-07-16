@@ -39,7 +39,9 @@ export function buoyGlyphSvg(
   category: BuoyCategory,
   opts: { fill: string; stroke?: string; strokeWidth?: number; size?: number }
 ): string {
-  const { fill, stroke = 'rgba(255,255,255,0.9)', strokeWidth = 1.8, size = 20 } = opts
+  // 기본 스트로크 = 다크 카드 위 아이콘 배지용 밝은 저채도 아웃라인(정의감 부여).
+  // 지도 마커처럼 위성/벡터 지도 위에 직접 얹는 경우는 호출부에서 흰 보더로 명시 오버라이드한다.
+  const { fill, stroke = 'rgba(241,245,250,0.26)', strokeWidth = 1.8, size = 20 } = opts
   const vb = 20
   if (category === 'kma-b') {
     return `<svg width="${size}" height="${size}" viewBox="0 0 ${vb} ${vb}" fill="none" aria-hidden="true">` +

@@ -22,10 +22,12 @@ export function windLevel(v: number | null | undefined): ThresholdLevel {
 }
 
 // 임계 색 — 상태색(정상/지연/미수신)과는 별개 축(값 기반)이라 이름을 분리한다.
-// normal=본문색 그대로(과채도 금지), caution=amber, warning=lost-red 재사용(예외우선 팔레트와 정합).
-// 탈-네온 패스(2026-07-15): index.css --delay/--lost 톤다운과 동기화.
+// normal=본문 잉크색 그대로(과채도 금지), caution=골드/올리브 앰버(예측선과 구분되는 톤),
+// warning=lost-red 재사용(예외우선 팔레트와 정합).
+// 균형 다크 패스(2026-07-16, §17): 다크 캔버스 위 가독을 위해 밝게 조정, index.css --t-hi/--delay/--lost
+// 와 계열 동기화.
 export const THRESHOLD_HEX: Record<ThresholdLevel, string> = {
-  normal: '#E9EEF3',
-  caution: '#E0A24A',
-  warning: '#E15A5F',
+  normal: '#F1F5FA',
+  caution: '#D8A93B',
+  warning: '#F0575C',
 }

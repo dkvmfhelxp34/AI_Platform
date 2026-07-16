@@ -149,11 +149,13 @@ export default function ChatPanel() {
         style={{
           position: 'fixed', right: 22, bottom: 22, zIndex: 1000,
           width: 54, height: 54, borderRadius: '50%', cursor: 'pointer',
-          background: open ? 'var(--bg-elev)' : 'var(--accent-dim)',
-          border: open ? '1px solid var(--line)' : '1px solid var(--accent)',
-          color: '#fff',
+          // §20 — FAB 는 float 엘리베이션(닫힘=중립 float 표면, 열림=primary accent — 핵심 인터랙션
+          // 소량 사용은 유지). 상단 하이라이트로 표고를 보강.
+          background: open ? 'var(--bg-float)' : 'var(--accent)',
+          border: open ? '1px solid var(--line)' : '1px solid var(--accent-h)',
+          color: open ? 'var(--t-mid)' : 'var(--bg-deep)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          boxShadow: 'var(--shadow-xl)',
+          boxShadow: 'var(--shadow-xl), var(--edge-hi)',
           transition: 'transform 0.15s ease, background 0.15s ease',
         }}
         onMouseEnter={e => { e.currentTarget.style.transform = 'scale(1.06)' }}
@@ -170,8 +172,9 @@ export default function ChatPanel() {
           style={{
             position: 'fixed', right: 22, bottom: 86, zIndex: 999,
             width: 'clamp(320px, 26vw, 400px)', height: 'clamp(440px, 64vh, 610px)',
-            background: 'var(--bg-panel)', border: '1px solid var(--line)', borderRadius: 14,
-            boxShadow: 'var(--shadow-xl)',
+            // §20 — 플로팅 위젯이므로 팝업·FAB 와 동일한 최고 엘리베이션(--bg-float) + 상단 하이라이트.
+            background: 'var(--bg-float)', border: '1px solid var(--line)', borderRadius: 14,
+            boxShadow: 'var(--shadow-xl), var(--edge-hi-strong)',
             display: 'flex', flexDirection: 'column', overflow: 'hidden',
             animation: 'chat-pop-in 0.18s var(--ease-out) both',
           }}
@@ -281,10 +284,12 @@ const MessageBubble = memo(function MessageBubble({ msg }: { msg: ChatMessage })
         maxWidth: '86%',
         padding: (isStatus || isThinking) ? '8px 12px' : '9px 13px',
         borderRadius: isUser ? '12px 3px 12px 12px' : '3px 12px 12px 12px',
-        background: isUser ? 'var(--accent-dim)' : 'var(--bg-elev)',
-        color: isUser ? '#fff' : 'var(--t-mid)',
-        border: isUser ? 'none' : '1px solid var(--line)',
-        boxShadow: isUser ? 'var(--shadow-sm)' : 'var(--shadow-sm), var(--edge-hi)',
+        // §20 — 유저 버블은 액센트를 "선택/핵심 인터랙션"으로 소량만 쓴다: 큰 면적 고채도 단색 채움
+        // 대신 soft-tint(--accent-100) 배경 + 절제된 보더로 전환(다국행 메시지가 커도 채도 과다 방지).
+        background: isUser ? 'var(--accent-100)' : 'var(--bg-elev)',
+        color: isUser ? 'var(--t-hi)' : 'var(--t-mid)',
+        border: isUser ? '1px solid var(--accent-dim)' : '1px solid var(--line)',
+        boxShadow: 'var(--shadow-sm), var(--edge-hi)',
         fontSize: 13.5, lineHeight: 1.65, wordBreak: 'break-word',
       }}>
         {isUser ? (

@@ -84,9 +84,9 @@ export const STATUS_COLOR: Record<BuoyStatus, string> = {
 // "예외 우선(exception-first)" 색채 — 5인 전문가 P0 + NDBC 신선도 색 관행: 정상은 저채도로 지도에
 // 녹아들게(스캔 부담↓), 지연/미수신은 채도를 계단식으로 끌어올려 예외만 튀게 한다.
 export const STATUS_HEX: Record<BuoyStatus, string> = {
-  '정상': '#5B9E85',
-  '지연': '#E0A24A',
-  '미수신': '#E15A5F',
+  '정상': '#4F9E7E',
+  '지연': '#E8A33C',
+  '미수신': '#F0575C',
 }
 export const STATUS_LABEL: Record<BuoyStatus, string> = {
   '정상': '정상 수신',
