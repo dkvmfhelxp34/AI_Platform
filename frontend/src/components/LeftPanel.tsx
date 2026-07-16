@@ -11,7 +11,7 @@
  *   variant(exception|normal)로 두 톤을 렌더한다.
  * - 기관명: 모든 행에 "(기상청)"/"(국립해양조사원)" 병기(기존 방침 유지).
  */
-import { useMemo, useState, type ReactNode } from 'react'
+import { useMemo, useRef, useState, type ReactNode } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { useStore } from '../store'
 import { liveBuoys, compactElapsed, type MergedBuoy } from '../utils/buoys'
@@ -78,6 +78,8 @@ export default function LeftPanel() {
 
   const [sortMode, setSortMode] = useState<SortMode>('severity')
   const [search, setSearch] = useState('')
+  const [searchFocused, setSearchFocused] = useState(false)
+  const searchInputRef = useRef<HTMLInputElement>(null)
 
   // 무데이터(수신 이력 없음) 지점은 이미 여기서 제외된 데이터셋(정상/지연/미수신만)
   const buoys = useMemo(() => liveBuoys(stations, live), [stations, live])
@@ -231,11 +233,27 @@ export default function LeftPanel() {
             <circle cx="5.5" cy="5.5" r="3.8" stroke="var(--t-lo)" strokeWidth="1.4" />
             <line x1="8.4" y1="8.4" x2="11.5" y2="11.5" stroke="var(--t-lo)" strokeWidth="1.4" strokeLinecap="round" />
           </svg>
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="부이 이름·코드 검색…"
+          <input ref={searchInputRef} value={search} onChange={e => setSearch(e.target.value)}
+            placeholder="부이 이름·코드 검색…"
             aria-label="부이 검색"
-            style={{ width: '100%', padding: '8px 11px 8px 30px', border: '1px solid var(--line)',
+            onFocus={() => setSearchFocused(true)}
+            onBlur={() => setSearchFocused(false)}
+            style={{ width: '100%', padding: search ? '8px 28px 8px 30px' : '8px 11px 8px 30px',
+              border: '1px solid ' + (searchFocused ? 'var(--accent)' : 'var(--line)'),
               borderRadius: 7, background: 'var(--bg-elev)', color: 'var(--t-hi)',
-              fontSize: 14, outline: 'none', fontFamily: 'inherit' }} />
+              fontSize: 14, fontFamily: 'inherit',
+              boxShadow: searchFocused ? '0 0 0 2px rgba(78,154,201,0.35)' : 'none',
+              transition: 'border-color 0.12s, box-shadow 0.12s' }} />
+          {search && (
+            <button type="button" aria-label="검색어 지우기"
+              onClick={() => { setSearch(''); searchInputRef.current?.focus() }}
+              style={{ position: 'absolute', right: 7, top: '50%', transform: 'translateY(-50%)',
+                width: 20, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                border: 'none', background: 'none', padding: 0, cursor: 'pointer', borderRadius: 4,
+                fontSize: 14, lineHeight: 1, color: 'var(--t-lo)' }}
+              onMouseEnter={e => { e.currentTarget.style.color = 'var(--t-hi)' }}
+              onMouseLeave={e => { e.currentTarget.style.color = 'var(--t-lo)' }}>×</button>
+          )}
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>

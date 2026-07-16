@@ -194,6 +194,10 @@ button { -webkit-tap-highlight-color: transparent; }
 .maplibregl-ctrl-attrib { background: rgba(15,20,27,0.72) !important; color: var(--t-lo) !important; border-radius: 4px !important; }
 .maplibregl-ctrl-attrib a { color: var(--accent-h) !important; }
 
+/* §20 — 우상단 "부이 N/M · 필터 적용중" 칩(top:12, ~32px 높이)과 겹치지 않도록 줌 컨트롤을
+   그 아래로 내린다(칩 하단 기준 ~10px 여유 포함). */
+.maplibregl-ctrl-top-right { top: 56px !important; right: 12px !important; }
+
 /* ── Scrollbar ─────────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 5px; height: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }

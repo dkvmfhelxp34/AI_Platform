@@ -532,6 +532,20 @@ function TimeseriesSection({ buoy, range, setRange, metric, setMetric, ts, loadi
       .flatMap(r => [r.obs, r.fc, r.fcLower != null && r.fcWidth != null ? r.fcLower + r.fcWidth : null])
       .filter((v): v is number => v != null)
 
+    // §23 보강 — chartData 는 표시용 다운샘플(≤MAX_CHART_POINTS)이라 30d/1y 처럼 표본이 많은
+    // 구간에서는 솎아지며 걸러진 극값이 축 밖으로 눌릴 수 있다(allowDataOverflow 로 조용히
+    // 클리핑됨). 전체 해상도 `points` 에서 같은 지표의 min/max 를 별도로 스캔해 vals 에 합류시켜
+    // 축 domain 이 항상 실측 전 구간의 진짜 최댓/최솟값을 덮게 한다.
+    let fullMin: number | null = null
+    let fullMax: number | null = null
+    for (const p of points) {
+      const v = p[metric]
+      if (v == null) continue
+      if (fullMin == null || v < fullMin) fullMin = v
+      if (fullMax == null || v > fullMax) fullMax = v
+    }
+    if (fullMin != null && fullMax != null) vals.push(fullMin, fullMax)
+
     if (!vals.length) {
       // 실측이 전혀 없을 때(로딩/빈 구간 등, 실제로는 이 경우 차트 자체가 EmptyState 로 대체돼
       // 안 그려짐)의 방어적 폴백 — 지표별 고정 NICE_STEP 을 그대로 사용.
@@ -564,7 +578,7 @@ function TimeseriesSection({ buoy, range, setRange, metric, setMetric, ts, loadi
     const max = Math.ceil((rawMax + pad) / step) * step
     const built = buildTicks(min, max <= min ? min + step : max, step)
     return { yMin: min, yMax: max <= min ? min + step : max, ticks: built.ticks, tickStep: built.step }
-  }, [chartData, metric])
+  }, [chartData, metric, points])
 
   const qcDots = useMemo(() => chartData.filter(r => r.qcFlag && r.obs != null), [chartData])
   const aiDots = useMemo(() => chartData.filter(r => r.aiSpike && r.obs != null), [chartData])
@@ -779,11 +793,11 @@ function TimeseriesSection({ buoy, range, setRange, metric, setMetric, ts, loadi
       {!loading && !error && points.length > 0 && (
         <div style={{ marginTop: 9, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 12, fontSize: 13, color: 'var(--t-lo)' }}>
           <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-            <span style={{ width: 7, height: 7, borderRadius: '50%', background: QC_INST_HEX, flexShrink: 0 }} />
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: QC_INST_HEX, flexShrink: 0 }} />
             관측기관 QC{ts?.qc_summary.checked ? ` · ${ts.qc_summary.flagged_count}건` : ''}
           </span>
           <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-            <span style={{ width: 6, height: 6, borderRadius: '50%', background: QC_AI_HEX, flexShrink: 0 }} />
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: QC_AI_HEX, flexShrink: 0 }} />
             AI 이상감지{ts?.qc_summary.ai_spike_count != null ? ` · ${ts.qc_summary.ai_spike_count}건` : ''}
           </span>
         </div>

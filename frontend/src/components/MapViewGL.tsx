@@ -71,7 +71,7 @@ const SAT_STYLE: maplibregl.StyleSpecification = {
   },
   layers: [{ id: 'esri-imagery', type: 'raster', source: 'esri', minzoom: 0, maxzoom: 19 }],
 }
-const LIGHT_STYLE_URL = 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json'
+const LIGHT_STYLE_URL = 'https://basemaps.cartocdn.com/gl/positron-nolabels-gl-style/style.json'
 
 const ATTRIBUTION = {
   sat: 'Esri, Maxar, Earthstar Geographics',
@@ -335,6 +335,8 @@ export default function MapViewGL() {
       maxBounds: PAN_BOUNDS,
       attributionControl: false,
     })
+
+    map.addControl(new maplibregl.NavigationControl({ showCompass: false, showZoom: true }), 'top-right')
 
     const popupEl = document.createElement('div')
     const popupRoot = createRoot(popupEl)
