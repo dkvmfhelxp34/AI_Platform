@@ -62,12 +62,34 @@ const RANGES: { key: TimeseriesRange; label: string }[] = [
   { key: '30d', label: '30일' },
   { key: '1y', label: '1년' },
 ]
-// Y축 "nice number" 틱을 만들기 위한 지표별 반올림 단위
+// §23(2026-07-16, "관측소마다 자료 범위가 다르니 Y축도 유동적으로") — 지표별 고정 스텝 대신 지점·구간마다
+// 실측 변동폭(range)에서 "1-2-2.5-5" 래더로 4~6눈금이 되는 step 을 매번 계산한다(niceStepFor 참고,
+// 아래 yMin/yMax useMemo 에서 호출). NICE_STEP 은 그 계산에 쓸 실측값이 전혀 없는(빈 vals) 방어적
+// 폴백 전용으로만 남긴다.
 const NICE_STEP: Record<TimeseriesMetric, number> = { wave: 1, wind_speed: 5, water_temp: 2, pressure: 5 }
 // 파고 0 부터, 풍속도 0 부터 시작(둘 다 음수 없음) — 수온/기압은 관측 범위에 맞춰 자동
 const ZERO_FLOOR: Record<TimeseriesMetric, boolean> = { wave: true, wind_speed: true, water_temp: false, pressure: false }
 // 값 표시 소수 자릿수
 const DECIMALS: Record<TimeseriesMetric, number> = { wave: 1, wind_speed: 1, water_temp: 1, pressure: 1 }
+
+// 1-2-2.5-5 래더에서 자료 범위(rawRange)가 4~6눈금이 되는 step 을 산정한다.
+function niceStepFor(rawRange: number): number {
+  const target = Math.max(rawRange, 1e-6) / 4.5
+  const pow = Math.pow(10, Math.floor(Math.log10(target)))
+  for (const m of [1, 2, 2.5, 5, 10]) if (target <= m * pow) return m * pow
+  return 10 * pow
+}
+// 단일값(구간 내 변동이 0) 퇴화 케이스에서 step 산정 전에 범위를 넓혀주는 지표별 typical epsilon
+// (예: 파고부이 24h 관측 1건뿐인 경우에도 "0 폭" 축이 되지 않게).
+const FLAT_PAD: Record<TimeseriesMetric, number> = { wave: 0.5, wind_speed: 2, water_temp: 1, pressure: 2 }
+
+/** Y축 눈금 라벨 — DECIMALS 자릿수로 표시하되, step 이 1 이상의 정수면 ".0" 꼬리를 지운다
+ * (step 이 작아(<1) 세밀한 변동을 보여줘야 할 때는 소수 1자리를 그대로 유지). */
+function formatYTick(v: number, step: number, decimals: number): string {
+  const s = v.toFixed(decimals)
+  if (step >= 1 && Number.isInteger(step) && s.endsWith('.0')) return s.slice(0, -2)
+  return s
+}
 
 const METRIC_THRESHOLDS: Partial<Record<TimeseriesMetric, { caution: number; warning: number }>> = {
   wave: WAVE_THRESHOLDS,
@@ -473,40 +495,76 @@ function TimeseriesSection({ buoy, range, setRange, metric, setMetric, ts, loadi
   const forecastEndT = forecastActive ? forecast!.points[forecast!.points.length - 1].t : null
 
   const threshold = METRIC_THRESHOLDS[metric]
-  const step = NICE_STEP[metric]
-  // §21(2026-07-16, A1 수정) — yMin/yMax 는 아래 domain=[yMin,yMax] 로 <YAxis> 에 그대로 들어가는데,
-  // Recharts 는 allowDataOverflow(기본 false) 일 때 우리가 지정한 domain 을 "내부 계산 데이터
-  // domain"과 Math.min/Math.max 로 합집합 처리한다(parseSpecifiedDomain). 이 차트는 예측
-  // 불확실성 밴드를 스택 Area 2겹(fcLower+fcWidth, stackId="fcband")으로 그리는데, Recharts 는
-  // 스택 시리즈의 내부 domain 을 항상 0 기준선 포함으로 계산한다(getDomainOfStackGroups) — 그
-  // 결과 기압처럼 절대값이 큰(⁓1000) 비-zero-floor 지표에서 yMin 이 995 로 계산되더라도 최종
-  // 렌더 domain 이 Math.min(995, 0)=0 으로 강제로 끌려 내려가 "0~600~1100" 같은 압착된 축이
-  // 나온다(KMA 해양기상부이 기압 탭 버그의 실제 원인 — 관측/예측 값 자체는 정상이었다). 아래
-  // <YAxis allowDataOverflow> 로 우리 domain 을 그대로 신뢰하게 만드는 게 근본 수정이다.
+  // §23(2026-07-16, "관측소마다 자료 범위도 유동적으로") — 아래 domain=[yMin,yMax] 로 <YAxis> 에
+  // 그대로 들어간다. 임계값(threshold.warning)을 더 이상 vals 에 강제 편입시키지 않는다(과거엔
+  // 잔잔한 날에도 파고 3m/경보 5m 를 포함시켜 축이 항상 0~5m 로 눌려 실측(예: 0.3m)이 바닥
+  // 슬리버에 짓눌렸다) — "예외 우선" 원칙: 축은 실측(obs/fc/band) 범위만 반영하고, 임계선은
+  // 그 범위 안에 들 때만(아래 JSX 조건부 렌더) 화면에 나타난다.
   //
-  // 두 번째 문제 — 패딩 공식: 기존 `rawMax*1.08`(zero-floor 전제, 파고 3m→+0.24m 정도는 적절)를
-  // 비-zero-floor 지표(기압 ⁓1000, 수온)에 그대로 쓰면 절대값 기준 8% 가 실제 변동폭(수십 배 더
-  // 작음)에 비해 지나치게 커서(예: 1015hPa*0.08≈+81hPa) 축이 다시 헐렁해진다. zero-floor 가
-  // 아닌 지표는 "실측 변동폭(range)" 기준 패딩으로 바꿔 위아래 여백을 데이터 스케일에 맞춘다.
-  const { yMin, yMax } = useMemo(() => {
+  // step 도 지표별 고정값(과거 NICE_STEP) 대신 niceStepFor() 로 매 지점·구간의 실측 변동폭에서
+  // "1-2-2.5-5" 래더 4~6눈금을 계산한다(수온 0.8℃ 변동에도 0.2/0.25℃ 처럼 세밀한 눈금이 나오게).
+  //
+  // allowDataOverflow 관련 배경(§21, A1) — Recharts 는 allowDataOverflow=false 일 때 우리가 지정한
+  // domain 을 "내부 계산 데이터 domain"과 Math.min/Math.max 로 합집합 처리한다(parseSpecifiedDomain).
+  // 이 차트는 예측 불확실성 밴드를 스택 Area 2겹(fcLower+fcWidth, stackId="fcband")으로 그리는데,
+  // Recharts 는 스택 시리즈의 내부 domain 을 항상 0 기준선 포함으로 계산한다(getDomainOfStackGroups)
+  // — 그 결과 기압처럼 절대값이 큰(⁓1000) 비-zero-floor 지표에서 yMin 이 995 로 계산되더라도 최종
+  // 렌더 domain 이 Math.min(995, 0)=0 으로 강제로 끌려 내려가 압착된 축이 나온다. <YAxis
+  // allowDataOverflow> 로 우리 domain 을 그대로 신뢰하게 만드는 게 근본 수정이다.
+  const { yMin, yMax, ticks, tickStep } = useMemo(() => {
+    // yMin~yMax 를 step 간격으로 순회해 명시적 tick 배열을 만든다. 8개를 넘으면 step 을 두 배로
+    // 늘려 재구성(눈금 과밀 방지) — domain([yMin,yMax]) 자체는 바꾸지 않는다.
+    const buildTicks = (min: number, max: number, initialStep: number): { ticks: number[]; step: number } => {
+      let s = initialStep
+      for (let guard = 0; guard < 20; guard++) {
+        const n = Math.max(0, Math.round((max - min) / s))
+        if (n + 1 <= 8 || guard === 19) {
+          const t: number[] = []
+          for (let i = 0; i <= n; i++) t.push(Math.round((min + i * s) * 1e6) / 1e6)
+          return { ticks: t, step: s }
+        }
+        s *= 2
+      }
+      return { ticks: [min, max], step: s }
+    }
+
     const vals = chartData
       .flatMap(r => [r.obs, r.fc, r.fcLower != null && r.fcWidth != null ? r.fcLower + r.fcWidth : null])
       .filter((v): v is number => v != null)
-    if (threshold) vals.push(threshold.warning)
-    if (!vals.length) return { yMin: 0, yMax: step * 4 }
-    const rawMax = Math.max(...vals)
-    const rawMin = Math.min(...vals)
-    if (ZERO_FLOOR[metric]) {
-      const max = Math.ceil((rawMax * 1.08) / step) * step
-      return { yMin: 0, yMax: max <= 0 ? step : max }
+
+    if (!vals.length) {
+      // 실측이 전혀 없을 때(로딩/빈 구간 등, 실제로는 이 경우 차트 자체가 EmptyState 로 대체돼
+      // 안 그려짐)의 방어적 폴백 — 지표별 고정 NICE_STEP 을 그대로 사용.
+      const fallbackStep = NICE_STEP[metric]
+      const fallbackMax = fallbackStep * 4
+      const built = buildTicks(0, fallbackMax, fallbackStep)
+      return { yMin: 0, yMax: fallbackMax, ticks: built.ticks, tickStep: built.step }
     }
-    // 비-zero-floor(수온·기압) — 실측 변동폭(range) 기준 위아래 15% 여백(최소 1 step 보장)
-    const dataRange = Math.max(rawMax - rawMin, step)
-    const pad = Math.max(dataRange * 0.15, step)
-    const max = Math.ceil((rawMax + pad) / step) * step
+
+    let rawMax = Math.max(...vals)
+    let rawMin = Math.min(...vals)
+    if (rawMax === rawMin) {
+      // 단일값(변동 0) 퇴화 케이스 — step 산정 전에 지표별 typical epsilon 만큼 위로 넓힌다.
+      rawMax = rawMin + FLAT_PAD[metric]
+    }
+
+    if (ZERO_FLOOR[metric]) {
+      const step = niceStepFor(rawMax - 0)
+      let max = Math.ceil((rawMax * 1.12) / step) * step
+      if (max < step) max = step
+      const built = buildTicks(0, max, step)
+      return { yMin: 0, yMax: max, ticks: built.ticks, tickStep: built.step }
+    }
+
+    // 비-zero-floor(수온·기압) — 실측 변동폭(range) 기준 패딩(위아래 15%, 최소 0.3 step 보장)
+    const range = rawMax - rawMin
+    const step = niceStepFor(range)
+    const pad = Math.max(range * 0.15, step * 0.3)
     const min = Math.floor((rawMin - pad) / step) * step
-    return { yMin: min, yMax: max <= min ? min + step : max }
-  }, [chartData, threshold, step, metric])
+    const max = Math.ceil((rawMax + pad) / step) * step
+    const built = buildTicks(min, max <= min ? min + step : max, step)
+    return { yMin: min, yMax: max <= min ? min + step : max, ticks: built.ticks, tickStep: built.step }
+  }, [chartData, metric])
 
   const qcDots = useMemo(() => chartData.filter(r => r.qcFlag && r.obs != null), [chartData])
   const aiDots = useMemo(() => chartData.filter(r => r.aiSpike && r.obs != null), [chartData])
@@ -631,21 +689,25 @@ function TimeseriesSection({ buoy, range, setRange, metric, setMetric, ts, loadi
                     0 까지 눌린다 — allowDataOverflow 로 우리 domain([yMin,yMax], 이미 실측 범위를
                     포함하도록 계산됨)을 그대로 신뢰하게 한다. */}
                 <YAxis tick={{ fontSize: 13, fill: AXIS_HEX, fontFamily: 'var(--font-ui)' }}
-                  axisLine={false} tickLine={false} width={38} domain={[yMin, yMax]}
-                  allowDecimals={step < 1} tickCount={5} allowDataOverflow />
+                  axisLine={false} tickLine={false} width={40} domain={[yMin, yMax]}
+                  ticks={ticks} tickFormatter={v => formatYTick(v, tickStep, DECIMALS[metric])}
+                  allowDataOverflow />
                 <Tooltip content={<ChartTooltip unit={metricCfg.unit} metricLabel={metricCfg.label} decimals={DECIMALS[metric]} />}
                   cursor={{ stroke: CROSSHAIR_HEX, strokeWidth: 1, strokeDasharray: '3 3' }} />
 
                 {/* 정상범위/특보 임계선 — 파고·풍속만(공개된 KMA 특보 정량기준 근사치). 주의보 라벨은
                     "위" 정렬로, 경보 라벨은 "아래" 정렬로 서로 어긋나게 배치해 두 선이 가까워도
-                    라벨끼리 겹치지 않는다. */}
-                {threshold && (
-                  <>
-                    <ReferenceLine y={threshold.caution} stroke={THRESHOLD_HEX.caution} strokeDasharray="4 3" strokeWidth={1.3}
-                      label={{ value: `주의보 ${threshold.caution}${metricCfg.unit}`, position: 'insideBottomRight', fill: THRESHOLD_HEX.caution, fontSize: 13, fontWeight: 600 }} />
-                    <ReferenceLine y={threshold.warning} stroke={THRESHOLD_HEX.warning} strokeDasharray="4 3" strokeWidth={1.3}
-                      label={{ value: `경보 ${threshold.warning}${metricCfg.unit}`, position: 'insideTopRight', fill: THRESHOLD_HEX.warning, fontSize: 13, fontWeight: 600 }} />
-                  </>
+                    라벨끼리 겹치지 않는다.
+                    §23 — 축 domain 을 임계값 포함하도록 늘리지 않으므로(위 useMemo), 임계선은 그
+                    값이 실제로 [yMin,yMax] 범위 안에 들 때만 그린다("예외 우선" — 잔잔한 날엔 화면
+                    밖에 있다가, 파고가 실제로 주의보에 다가가면 자연스럽게 시야에 들어온다). */}
+                {threshold && threshold.caution >= yMin && threshold.caution <= yMax && (
+                  <ReferenceLine y={threshold.caution} stroke={THRESHOLD_HEX.caution} strokeDasharray="4 3" strokeWidth={1.3}
+                    label={{ value: `주의보 ${threshold.caution}${metricCfg.unit}`, position: 'insideBottomRight', fill: THRESHOLD_HEX.caution, fontSize: 13, fontWeight: 600 }} />
+                )}
+                {threshold && threshold.warning >= yMin && threshold.warning <= yMax && (
+                  <ReferenceLine y={threshold.warning} stroke={THRESHOLD_HEX.warning} strokeDasharray="4 3" strokeWidth={1.3}
+                    label={{ value: `경보 ${threshold.warning}${metricCfg.unit}`, position: 'insideTopRight', fill: THRESHOLD_HEX.warning, fontSize: 13, fontWeight: 600 }} />
                 )}
 
                 {/* 예측 구간 음영 + 관측/예측 경계선. nowT = 마지막 관측시각이라 정상 부이는 ≈현재라
