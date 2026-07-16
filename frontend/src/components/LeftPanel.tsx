@@ -365,7 +365,10 @@ function UnifiedRow({ b, variant, sortMode, isSel, onClick }: {
 
       {isException ? (
         <span className="tnum" style={{ fontSize: 13, fontWeight: 700, color, whiteSpace: 'nowrap', flexShrink: 0 }}>
-          {STATUS_LABEL[b.status]} · {compactElapsed(b.minutes_since)}
+          {/* 안전망 — minutes_since 가 없으면(백엔드 백필도 실패한 진짜 이력없음) "· —"(끊김처럼
+              보이는 표기) 대신 상태 라벨만 보여준다. 정상 케이스는 백엔드가 마지막 수신 시각을
+              백필해주므로 대개 실제 경과시간이 붙는다. */}
+          {b.minutes_since == null ? STATUS_LABEL[b.status] : `${STATUS_LABEL[b.status]} · ${compactElapsed(b.minutes_since)}`}
         </span>
       ) : (
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexShrink: 0 }}>

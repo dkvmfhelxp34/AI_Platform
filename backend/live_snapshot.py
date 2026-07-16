@@ -9,6 +9,8 @@
 """
 from __future__ import annotations
 
+import concurrent.futures
+import threading
 import time
 from datetime import datetime, timezone, timedelta
 from typing import Optional
@@ -18,6 +20,7 @@ import kma_marine
 import live_cache
 import stations as stations_mod
 import status as status_mod
+import timeseries as timeseries_mod
 
 
 def _fmt_kma_tm(tm: str) -> str | None:
@@ -118,31 +121,103 @@ def _khoa_live_item(obs_code: str, rec: dict, now) -> dict:
     }
 
 
-def _missing_live_item(station: dict) -> dict:
+# §Issue2 픽스 — "방어적 미수신"(등록부엔 있지만 이번 폴링 사이클 라이브 스냅샷 어디에도 없는) 지점의
+# obs_time/minutes_since 를 시계열 마지막 포인트로 백필한다. 대상은 `build_live_snapshot()` 세 번째
+# 루프(등록부 - {kma_obs ∪ khoa_obs})뿐이라 호출량이 원래도 작은 지점 집합에 한정된다.
+#
+# **왜 백그라운드 스레드인가**: KHOA 지점은 `timeseries.get_timeseries(..., days=30)` 가 내부적으로
+# `khoa_api.fetch_oceangrid_range()`(2일 간격 day-loop × 4항목 엔드포인트 = 요청 범위 전체를 순회하는
+# 수십 회의 순차 POST, 공유 throttle 0.15초/회)를 타므로 **초 단위가 아니라 수십 초가 걸릴 수 있다**
+# (실측: KG_0028 1개 지점 백필이 120초 넘게 걸림). 이걸 `/api/live` 요청 스레드에서 동기 호출하면
+# 그 요청(그리고 그 요청을 처리하는 스레드풀 워커)이 그만큼 블로킹된다 — "비용 상한"이라는 요구사항에
+# 정면으로 위배된다. 그래서 조회는 항상 **전용 스레드풀에 위임**하고, `/api/live` 요청은 그 순간 캐시에
+# 있는 값(첫 조회 전이면 None)을 즉시 반환한다. 최초 호출(그리고 TTL 만료 후 첫 호출)은 obs_time=None
+# (기존 D1 동작과 동일, 상태만 미수신)으로 보이고, 백그라운드 작업이 끝나면 그 다음 `/api/live` 호출부터
+# 백필된 값이 보인다 — "매 요청마다 무거운 외부호출을 추가하지 않는다"는 요구사항을 요청 지연이
+# 아니라 스레드 분리로 만족시킨다(외부호출 총량 자체는 그대로: 지점당 15분 TTL에 한 번).
+_BACKFILL_TTL = 900  # 15분 — 캐시(성공/실패 결과 모두) 유효기간, 이후 재조회 트리거
+_backfill_cache: dict[str, tuple[float, Optional[str]]] = {}
+_backfill_inflight: set[str] = set()
+_backfill_lock = threading.Lock()
+_backfill_executor = concurrent.futures.ThreadPoolExecutor(
+    max_workers=4, thread_name_prefix="live-backfill"
+)
+
+
+def _backfill_worker(source: str, sid: str) -> None:
+    """스레드풀에서 실행 — 시계열 마지막 포인트를 조회해 캐시에 채워 넣는다(요청 스레드와 무관)."""
+    obs_time: Optional[str] = None
+    try:
+        ts = timeseries_mod.get_timeseries(source, sid, days=30)
+        points = (ts or {}).get("points") or []
+        if points:
+            obs_time = points[-1].get("t")
+    except Exception:
+        obs_time = None  # 방어적 레코드 채우는 경로 — 백필 실패는 침묵하고 None 유지
+    with _backfill_lock:
+        _backfill_cache[sid] = (time.time(), obs_time)
+        _backfill_inflight.discard(sid)
+
+
+def _last_seen_obs_time(source: Optional[str], sid: Optional[str]) -> Optional[str]:
+    """`sid`(등록부 id, KMA 는 'KMA_22107' 형태 그대로) 의 과거 30일 시계열 마지막 포인트 시각
+    ('YYYY-MM-DD HH:MM') — 아직 조회 전/조회 중이거나 이력이 전혀 없으면 None. 절대 이 함수
+    자체는 블로킹하지 않는다(무거운 조회는 `_backfill_executor` 로 위임, 위 모듈독스트링 참고)."""
+    if not source or not sid:
+        return None
+    now = time.time()
+    with _backfill_lock:
+        hit = _backfill_cache.get(sid)
+        cached_val = hit[1] if hit else None
+        is_fresh = bool(hit) and (now - hit[0] < _BACKFILL_TTL)
+        should_kick_off = not is_fresh and sid not in _backfill_inflight
+        if should_kick_off:
+            _backfill_inflight.add(sid)
+    if should_kick_off:
+        _backfill_executor.submit(_backfill_worker, source, sid)
+    return cached_val
+
+
+def _missing_live_item(station: dict, now) -> dict:
     """§D1 픽스 — 등록부(`stations.py`)에는 있지만 라이브 소스(sea_obs/twRecent burst) 어느
     쪽에도 아직 안 잡힌 지점의 방어적 레코드.
 
     발생 사례(실측): (1) KHOA 지점이 twRecent burst 폴링 대상에서 한 번도 성공 응답을 못 받은 경우,
     (2) KMA sea_obs 가 매 10분 슬롯의 단일 관측 스냅샷이라, 보고주기가 느리거나 간헐적인 지점(주로
     파고부이 C타입)이 특정 호출 타이밍엔 그 슬롯에 빠져 있는 경우. 원인이 무엇이든 등록부에 있는
-    지점은 지도·리스트·카운트에서 통째로 사라지면 안 되므로, status='미수신'·obs_time/minutes_since
-    =None·값 전부 결측인 정직한 레코드를 채워 넣는다(값을 지어내지 않음).
+    지점은 지도·리스트·카운트에서 통째로 사라지면 안 되므로, status='미수신' 정직한 레코드를 채워
+    넣는다(값을 지어내지 않음, `values` 는 항상 전부 결측).
+
+    §Issue2 픽스: obs_time/minutes_since 는 더 이상 무조건 None 이 아니다 — `_last_seen_obs_time()`
+    으로 과거 시계열의 마지막 포인트를 값싸게 조회해, 있으면 그 시각으로 백필한다("미수신 · —"처럼
+    끊김과 결측을 혼동시키는 표시 대신 "미수신 · N일 전"처럼 실제 마지막 수신 이후 경과를 보여준다).
+    이력이 전혀 없는 지점(§Issue1 픽스로 그런 지점은 등록부 자체에서 이미 제외되지만, 방어적으로)은
+    그대로 None 유지. status 는 백필 여부와 무관하게 항상 '미수신'으로 고정한다(이 레코드는 이번
+    사이클 라이브 응답이 없다는 사실 자체를 나타내는 것이지, 재분류가 목적이 아니다).
     """
     values: dict = {}
     source = station.get("source")
     tp = station.get("tp")
+    sid = station.get("id")
+    obs_time = _last_seen_obs_time(source, sid)
+    minutes_since = None
+    cadence_min = None
+    if obs_time:
+        classified = status_mod.classify(obs_time, now, source=source, stn_id=sid)
+        minutes_since = classified["minutes_since"]
+        cadence_min = classified["cadence_min"]
     return {
         "source": source,
-        "id": station.get("id"),
+        "id": sid,
         "name": station.get("name"),
         "lon": station.get("lon"),
         "lat": station.get("lat"),
         "tp": tp,
         "tp_label": station.get("tp_label"),
-        "obs_time": None,
+        "obs_time": obs_time,
         "status": status_mod.Status.LOST.value,
-        "minutes_since": None,
-        "cadence_min": None,
+        "minutes_since": minutes_since,
+        "cadence_min": cadence_min,
         "values": values,
         "available_metrics": available_metrics(source, tp, values),
     }
@@ -163,6 +238,15 @@ def build_live_snapshot() -> list[dict]:
     으로 "미수신" 방어 레코드를 채워 넣는다. 그래야 `/api/stations` 에는 있는데 `/api/live`(지도·
     리스트·카운트)에선 통째로 사라지는 지점이 구조적으로 없어진다. `stations.get_stations()` 는
     자체 1시간 캐시가 있어 매 요청마다 추가 외부호출이 생기지 않는다.
+
+    §Issue1 픽스(D1 의 보완 반대방향): 위 합집합과 별개로, **라이브 소스 자체가 등록부보다 넓은
+    경우**도 있다 — 예: KHOA twRecent burst 폴링이 등록부가 이미 제외한 지점(이름은 관측부이인데
+    실제로는 twRecent·관측개시일 둘 다 무데이터라 `stations._khoa_stations()` 가 걸러낸 지점,
+    실측 사례 YS_0007)을 두 캐시의 TTL 이 어긋나는 순간에 일시적으로 다시 잡아버리는 경우. 그러면
+    `/api/stations` 에는 없는데 `/api/live` 에만 있는(그리고 진짜 데이터가 없어 obs_time=None
+    으로 뜨는) "유령" 지점이 생긴다. 등록부를 유일한 유니버스로 삼기 위해, 조립이 끝나면 등록부
+    id 집합에 없는 item 은 전부 드롭한다(D1 의 합집합 방향은 그대로 유지 — 등록부에는 있는데
+    라이브에 없는 지점은 여전히 `_missing_live_item()` 으로 채워지므로 이 필터에 걸리지 않는다).
     """
     now = kma_marine.now_kst()
     out: list[dict] = []
@@ -182,12 +266,18 @@ def build_live_snapshot() -> list[dict]:
         out.append(item)
         seen_ids.add(item["id"])
 
-    for station in stations_mod.get_stations():
+    registry = stations_mod.get_stations()
+    registry_ids = {s["id"] for s in registry if s.get("id")}
+
+    for station in registry:
         sid = station.get("id")
         if not sid or sid in seen_ids:
             continue
-        out.append(demo_scenario.apply_status_override(_missing_live_item(station)))
+        out.append(demo_scenario.apply_status_override(_missing_live_item(station, now)))
         seen_ids.add(sid)
+
+    # §Issue1 — 등록부에 없는 id 는 라이브 소스가 무엇을 잡았든 드롭(위 독스트링 참고).
+    out = [item for item in out if item.get("id") in registry_ids]
 
     return out
 
