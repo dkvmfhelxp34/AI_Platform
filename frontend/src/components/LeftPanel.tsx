@@ -205,7 +205,7 @@ export default function LeftPanel() {
             icon={<span style={{ width: 8, height: 8, borderRadius: '50%', background: STATUS_HEX[st], flexShrink: 0 }} />} />
         ))}
 
-        <FilterGroupHeader label="종류" onAll={() => setAllCategories(true)} onNone={() => setAllCategories(false)} />
+        <FilterGroupHeader label="유형" onAll={() => setAllCategories(true)} onNone={() => setAllCategories(false)} />
         {CATEGORY_ORDER.map(cat => (
           <FilterCheckRow key={cat} checked={visibleCategories.has(cat)} onChange={() => toggleCategory(cat)}
             label={CATEGORY_LABEL[cat]} count={categoryCounts[cat]}

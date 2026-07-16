@@ -173,7 +173,7 @@ function ValueCell({ label, value, unit, color }: { label: string; value: string
   )
 }
 
-function BuoyPopupContent({ b, onDetail }: { b: MergedBuoy; onDetail: (id: string) => void }) {
+function BuoyPopupContent({ b }: { b: MergedBuoy }) {
   const hex = STATUS_HEX[b.status]
   const category = categoryOf(b)
   const v = b.values
@@ -187,7 +187,7 @@ function BuoyPopupContent({ b, onDetail }: { b: MergedBuoy; onDetail: (id: strin
   if (v.water_temp != null) cells.push({ label: '수온', value: v.water_temp.toFixed(1), unit: '℃' })
 
   return (
-    <div style={{ padding: '16px 18px', fontFamily: 'var(--font-ui)', color: 'var(--t-mid)', fontSize: 13.5, width: 296 }}>
+    <div style={{ padding: '16px 18px 18px', fontFamily: 'var(--font-ui)', color: 'var(--t-mid)', fontSize: 13.5, width: 296 }}>
       {/* 헤더 — 글리프 + 한글명(대) + 영문 + (기관명) + 상태칩 */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8, paddingRight: 18, marginBottom: 10 }}>
         <div style={{ minWidth: 0, display: 'flex', alignItems: 'flex-start', gap: 9 }}>
@@ -218,9 +218,10 @@ function BuoyPopupContent({ b, onDetail }: { b: MergedBuoy; onDetail: (id: strin
         </span>
       </div>
 
-      {/* 핵심값 2~3종(임계값 색) */}
+      {/* 핵심값 2~3종(임계값 색) — 스파크라인이 뒤따르면 여백 확보, 스파크라인이 없으면(마지막
+          콘텐츠) 컨테이너 하단 패딩에만 기대 여백을 중복시키지 않는다. */}
       {cells.length > 0 ? (
-        <div style={{ display: 'grid', gridTemplateColumns: `repeat(${cells.length}, 1fr)`, gap: 6, marginBottom: 10 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: `repeat(${cells.length}, 1fr)`, gap: 6, marginBottom: b.hasLive ? 10 : 0 }}>
           {cells.map(c => <ValueCell key={c.label} {...c} />)}
         </div>
       ) : (
@@ -229,26 +230,15 @@ function BuoyPopupContent({ b, onDetail }: { b: MergedBuoy; onDetail: (id: strin
         </div>
       )}
 
-      {/* 최근 24h 파고 미니 스파크라인 */}
+      {/* 최근 24h 파고 미니 스파크라인 — 팝업의 마지막 콘텐츠(상세 CTA 제거 후 "작은 현황" 카드로
+          축소, ui_revision_notes 신규 클릭 모델: 드로어가 항상 자동으로 열리므로 CTA 는 불필요해졌다).
+          하단 여백은 컨테이너 padding(18px)에 맡긴다. */}
       {b.hasLive && (
-        <div style={{ background: 'var(--bg-panel)', border: '1px solid var(--line)', borderRadius: 7, padding: '7px 9px 5px', marginBottom: 13 }}>
+        <div style={{ background: 'var(--bg-panel)', border: '1px solid var(--line)', borderRadius: 7, padding: '7px 9px 5px' }}>
           <div className="eyebrow" style={{ marginBottom: 3, fontSize: 13 }}>최근 24h 파고 추이</div>
           <WaveSparkline source={b.source} id={b.id} />
         </div>
       )}
-
-      {/* 상세 CTA(프라이머리 — 시안 채움 + 딥네이비 텍스트, hover 시 더 밝게) */}
-      <button onClick={() => onDetail(b.id)}
-        onMouseEnter={e => { e.currentTarget.style.background = 'var(--accent-h)' }}
-        onMouseLeave={e => { e.currentTarget.style.background = 'var(--accent)' }}
-        style={{
-          width: '100%', fontSize: 14, fontWeight: 700, color: 'var(--bg-deep)', background: 'var(--accent)',
-          border: 'none', borderRadius: 7, padding: '10px 14px', cursor: 'pointer',
-          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-          transition: 'background 0.12s',
-        }}>
-        상세 보기 <span aria-hidden="true">›</span>
-      </button>
     </div>
   )
 }
@@ -266,12 +256,12 @@ function Tag({ label }: { label: string }) {
 // ── Main component ──────────────────────────────────────────────────────
 export default function MapViewGL() {
   const { stations, live, liveLoadedOnce, baseLayer, setBaseLayer, selectedStationId, setSelectedStationId, flyToRequest, openDetail,
-    detailOpenId, visibleStatuses, visibleCategories } = useStore(
+    closeDetail, detailOpenId, visibleStatuses, visibleCategories } = useStore(
     useShallow(s => ({
       stations: s.stations, live: s.live, liveLoadedOnce: s.liveLoadedOnce,
       baseLayer: s.baseLayer, setBaseLayer: s.setBaseLayer,
       selectedStationId: s.selectedStationId, setSelectedStationId: s.setSelectedStationId, flyToRequest: s.flyToRequest,
-      openDetail: s.openDetail, detailOpenId: s.detailOpenId,
+      openDetail: s.openDetail, closeDetail: s.closeDetail, detailOpenId: s.detailOpenId,
       visibleStatuses: s.visibleStatuses, visibleCategories: s.visibleCategories,
     }))
   )
@@ -300,16 +290,16 @@ export default function MapViewGL() {
   const openPopupFor = useCallback((b: MergedBuoy) => {
     if (!popupRootRef.current || !mlPopupRef.current || !mapRef.current) return
     popupBuoyIdRef.current = b.id
-    popupRootRef.current.render(<BuoyPopupContent b={b} onDetail={openDetail} />)
+    popupRootRef.current.render(<BuoyPopupContent b={b} />)
     mlPopupRef.current.setLngLat([b.lon, b.lat]).addTo(mapRef.current)
-  }, [openDetail])
+  }, [])
 
   // 실시간 폴링으로 값이 갱신되면 열려있는 팝업도 최신값으로 리렌더
   useEffect(() => {
     if (!popupBuoyIdRef.current || !mlPopupRef.current?.isOpen()) return
     const b = buoys.find(x => x.id === popupBuoyIdRef.current)
-    if (b) popupRootRef.current?.render(<BuoyPopupContent b={b} onDetail={openDetail} />)
-  }, [buoys, openDetail])
+    if (b) popupRootRef.current?.render(<BuoyPopupContent b={b} />)
+  }, [buoys])
 
   // F2 — 드로어 ‹ › 내비(openDetail(다른 id))는 selectedStationId 는 갱신하지만(store.openDetail
   // 참고) 지도 팝업은 별도 상태(popupBuoyIdRef)라 그대로 남아있었다 — 드로어는 부이 A→B 로
@@ -317,12 +307,19 @@ export default function MapViewGL() {
   // 팝업의 부이가 지금 드로어가 보여주는 부이(detailOpenId)와 다르면 팝업을 닫아 불일치를 없앤다
   // (카메라를 이동시키는 flyTo 는 쓰지 않음 — 드로어 내비 순서가 이름순이라 지도가 매번 먼 곳으로
   // 튀는 게 더 산만하다).
+  // 신규 클릭 모델(2026-07-16) — 드로어가 열려있는 동안 ‹ › 내비로 detailOpenId 가 바뀌면 지도의
+  // 선택 링(selectedStationId)도 그 부이를 따라가야 팝업/선택/드로어 3자가 항상 같은 부이를
+  // 가리킨다. 카메라 flyTo 는 의도적으로 하지 않는다(내비 순서가 이름순이라 지도가 매번 먼 곳으로
+  // 튀는 게 더 산만함). 가드 `if (!detailOpenId) return` 이 먼저이므로 토글-오프 경로(마커 재클릭 →
+  // setSelectedStationId(null)+closeDetail() 이 이미 둘 다 비움)와 절대 충돌하지 않는다 — 여기 도달할
+  // 때는 항상 드로어가 열려있는 상태다.
   useEffect(() => {
     if (!detailOpenId) return
     if (popupBuoyIdRef.current && popupBuoyIdRef.current !== detailOpenId && mlPopupRef.current?.isOpen()) {
       mlPopupRef.current.remove()
     }
-  }, [detailOpenId])
+    setSelectedStationId(detailOpenId)
+  }, [detailOpenId, setSelectedStationId])
 
   // ── 지도 초기화 ──────────────────────────────────────────────────────
   useEffect(() => {
@@ -350,6 +347,16 @@ export default function MapViewGL() {
     map.on('load', () => {
       setMapReady(true)
       if (import.meta.env.DEV) (window as any).__map = map
+    })
+
+    // 신규 클릭 모델(2026-07-16) — 빈 바다(마커 없는 지점) 클릭 시 팝업·선택·드로어를 전부 닫는다.
+    // 마커 클릭 핸들러는 stopPropagation 을 걸어두므로, 여기까지 올라오는 'click' 은 항상 배경
+    // 클릭이다. MapLibre 는 드래그(팬)로 끝난 제스처에는 'click' 을 발생시키지 않으므로 팬/줌은
+    // 영향받지 않는다 — 실제 클릭(탭)에서만 닫힌다.
+    map.on('click', () => {
+      useStore.getState().setSelectedStationId(null)
+      useStore.getState().closeDetail()
+      popup.remove()
     })
 
     mapRef.current = map
@@ -490,7 +497,16 @@ export default function MapViewGL() {
         el.addEventListener('click', (e) => {
           e.stopPropagation()
           const cur = useStore.getState().selectedStationId
-          setSelectedStationId(b.id === cur ? null : b.id)
+          if (b.id === cur) {
+            // 토글-오프 — 이미 선택된 마커를 다시 클릭하면 팝업·선택·드로어를 전부 닫는다.
+            setSelectedStationId(null)
+            closeDetail()
+            mlPopupRef.current?.remove()
+            return
+          }
+          // 신규 클릭 모델 — 마커 클릭 시 팝업과 상세 드로어를 함께 연다(단일 클릭으로 둘 다).
+          setSelectedStationId(b.id)
+          openDetail(b.id)
           const latest = buoysRef.current.find(x => x.id === b.id) ?? b
           openPopupFor(latest)
         })
@@ -501,14 +517,19 @@ export default function MapViewGL() {
       }
     }
     requestAnimationFrame(updateLabelVisibility)
-  }, [visibleBuoys, mapReady, selectedStationId, baseLayer, updateLabelVisibility, setSelectedStationId, openPopupFor])
+  }, [visibleBuoys, mapReady, selectedStationId, baseLayer, updateLabelVisibility, setSelectedStationId, openPopupFor, openDetail, closeDetail])
 
   // ── 좌측 패널에서 flyTo 요청 처리 ────────────────────────────────────
+  // 기존: 카메라 flyTo → moveend 시 팝업만 열었다(선택은 store.requestFlyTo 자체가
+  // selectedStationId 를 이미 세팅). 신규 클릭 모델(2026-07-16) — 여기서 openDetail(id) 도 함께
+  // 호출해 좌패널 행 클릭 시 flyTo+팝업+드로어가 한 번에 모두 열리게 한다(카메라 이동을 기다릴
+  // 필요 없는 드로어는 즉시 열고, 팝업만 지도 위치가 확정되는 moveend 까지 기다린다).
   useEffect(() => {
     const map = mapRef.current
     if (!map || !mapReady || !flyToRequest) return
     const b = buoysRef.current.find(x => x.id === flyToRequest.id)
     if (!b || !isFinite(b.lat) || !isFinite(b.lon)) return
+    openDetail(b.id)
     map.flyTo({ center: [b.lon, b.lat], zoom: Math.max(map.getZoom(), 8.5), speed: 1.1, curve: 1.3 })
     const onMoveEnd = () => { openPopupFor(b); map.off('moveend', onMoveEnd) }
     map.on('moveend', onMoveEnd)
@@ -559,7 +580,7 @@ export default function MapViewGL() {
       <div style={{ position: 'absolute', left: 12, bottom: 34, zIndex: 900, animation: 'fade-in 0.5s ease both' }}>
         <div className="map-legend" style={{ borderRadius: 10, padding: '10px 13px 11px', display: 'flex', flexDirection: 'column', gap: 9, minWidth: 150 }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: '0.02em', color: 'var(--t-lo)' }}>모양 = 부이 종류</span>
+            <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: '0.02em', color: 'var(--t-lo)' }}>부이 유형</span>
             {CATEGORY_ORDER.map(cat => (
               <span key={cat} style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
                 <BuoyGlyph category={cat} fill="var(--t-mid)" stroke="var(--line)" strokeWidth={1.1} size={13} />
@@ -569,7 +590,7 @@ export default function MapViewGL() {
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6,
             borderTop: '1px solid var(--line)', paddingTop: 7 }}>
-            <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: '0.02em', color: 'var(--t-lo)' }}>색 = 수신 상태</span>
+            <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: '0.02em', color: 'var(--t-lo)' }}>수신 상태</span>
             {(['정상', '지연', '미수신'] as BuoyStatus[]).map(st => (
               <span key={st} style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
                 <span className={st === '미수신' ? 'buoy-marker-pulse-alert' : st === '지연' ? 'buoy-marker-pulse' : undefined}
