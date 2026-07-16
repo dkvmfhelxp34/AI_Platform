@@ -2,6 +2,11 @@
 // **플로팅 위젯**(FAB 런처 + 팝업)으로 제공한다 — 상시 우측 도크를 차지하지 않아 지도 폭을 그대로
 // 유지한다(우측 도크는 DetailDrawer 전용으로 남는다, App.tsx 참고). 백엔드 `/api/chat`(SSE) 와
 // 통신하며, 데이터 조회 결과만 근거로 답한다(백엔드 chat.py 시스템 프롬프트가 환각을 차단).
+// §25-c(2026-07-16) 대화 기억(7일 보존): 세션 id 를 localStorage 에 고정해 새로고침에도 같은
+// 세션을 이어 쓰고(과거엔 새로고침마다 새 id), 마운트 시 `/api/chat/history` 로 이전 대화를
+// 복원해 화면에 먼저 그린다(백엔드에 아직 이 엔드포인트가 없거나 실패해도 조용히 빈 상태로
+// 시작 — 콘솔 에러 없이 진행). 헤더의 "새 대화" 버튼은 세션 id 자체를 새로 발급해 이전 대화와
+// 완전히 분리된 새 스레드를 시작한다.
 import { useState, useRef, useEffect, useCallback, memo, type RefObject } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -9,8 +14,31 @@ import remarkBreaks from 'remark-breaks'
 import { useStore } from '../store'
 import type { ChatMessage } from '../types'
 
-// 페이지 세션 동안 유지되는 챗 세션 id(모듈 메모리) — 새로고침 시 초기화, 페이지 내에서는 맥락 유지.
-let chatSessionId: string | null = null
+const CHAT_SESSION_KEY = 'buoy-chat-session-id'
+
+function genSessionId(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID()
+  }
+  return `s${Date.now()}-${Math.random().toString(36).slice(2)}`
+}
+
+function loadOrCreateSessionId(): string {
+  try {
+    const existing = localStorage.getItem(CHAT_SESSION_KEY)
+    if (existing) return existing
+    const fresh = genSessionId()
+    localStorage.setItem(CHAT_SESSION_KEY, fresh)
+    return fresh
+  } catch {
+    // localStorage 접근 불가(사생활 모드 등) — 세션 고정은 못 하지만 페이지 내에서는 계속 동작.
+    return genSessionId()
+  }
+}
+
+// 세션 id — localStorage 에 고정되어 새로고침 후에도 같은 세션(따라서 같은 대화)을 이어간다.
+// "새 대화" 클릭 시에만 새로 발급(startNewChat).
+let chatSessionId: string = loadOrCreateSessionId()
 
 const EXAMPLE_PROMPTS = [
   '덕적도 지금 파고 얼마야?',
@@ -54,6 +82,29 @@ export default function ChatPanel() {
     return () => window.removeEventListener('keydown', onKey)
   }, [open])
 
+  // 마운트 시 1회 — 이전 대화 복원(§25-c). 백엔드가 아직 `/api/chat/history` 를 모르거나(404),
+  // 네트워크 오류거나, 세션이 비어 있으면 전부 조용히 무시하고 빈 상태로 시작한다(콘솔에러 없음
+  // — 구 백엔드 프로세스 대상 검증에서도 이 경로가 조용해야 한다).
+  useEffect(() => {
+    let cancelled = false
+    fetch(`/api/chat/history?session_id=${encodeURIComponent(chatSessionId)}`)
+      .then(res => (res.ok ? res.json() : null))
+      .then(data => {
+        if (cancelled || !data) return
+        const raw = Array.isArray(data.messages) ? data.messages : []
+        if (raw.length === 0) return
+        const restored: ChatMessage[] = raw
+          .filter((m: any) => m && typeof m.content === 'string' && m.content
+            && (m.role === 'user' || m.role === 'assistant'))
+          .map((m: any, i: number) => ({ id: `h${i}-${m.role}`, role: m.role, content: m.content }))
+        if (restored.length === 0) return
+        // 그 사이 사용자가 이미 새 메시지를 보냈다면(드문 경쟁) 복원으로 덮어쓰지 않는다.
+        setMessages(prev => (prev.length > 0 ? prev : restored))
+      })
+      .catch(() => { /* 조용히 무시 — 새 대화로 시작 */ })
+    return () => { cancelled = true }
+  }, [])
+
   const sendMessage = useCallback(async (text: string) => {
     const trimmed = text.trim()
     if (!trimmed || loading) return
@@ -72,7 +123,7 @@ export default function ChatPanel() {
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: trimmed, session_id: chatSessionId ?? undefined }),
+        body: JSON.stringify({ message: trimmed, session_id: chatSessionId }),
       })
       if (!res.ok || !res.body) {
         const msg = res.status >= 500
@@ -132,10 +183,14 @@ export default function ChatPanel() {
 
   const hasMessages = messages.length > 0
 
-  const resetChat = () => {
+  // "새 대화" — 세션 id 자체를 새로 발급해 localStorage 에 기록하고, 이전 대화(과거 세션 id 로
+  // 남아 있는 jsonl 이력)와 완전히 분리된 새 스레드를 시작한다(§25-c).
+  const startNewChat = () => {
     if (loading) return
+    const fresh = genSessionId()
+    chatSessionId = fresh
+    try { localStorage.setItem(CHAT_SESSION_KEY, fresh) } catch { /* 사생활 모드 등 — 무시 */ }
     setMessages([])
-    chatSessionId = null
   }
 
   return (
@@ -194,19 +249,20 @@ export default function ChatPanel() {
           }}>
             <span className="chat-live-dot" style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--accent)', flexShrink: 0 }} />
             <span style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--t-hi)' }}>AI 어시스턴트</span>
-            {hasMessages && (
-              <button
-                onClick={resetChat}
-                disabled={loading}
-                title={loading ? '응답 생성 중에는 초기화할 수 없습니다' : '대화 초기화'}
-                style={{
-                  marginLeft: 'auto', fontSize: 13, color: 'var(--t-lo)', fontFamily: 'inherit',
-                  background: 'none', border: '1px solid var(--line)', borderRadius: 6,
-                  padding: '3px 8px', cursor: loading ? 'not-allowed' : 'pointer',
-                  opacity: loading ? 0.5 : 1,
-                }}
-              >초기화</button>
-            )}
+            {/* §25-c — 항상 노출(현재 대화 유무와 무관): 이전 대화와 분리된 새 세션을 즉시 시작. */}
+            <button
+              onClick={startNewChat}
+              disabled={loading}
+              title={loading ? '응답 생성 중에는 새 대화를 시작할 수 없습니다' : '새 대화 시작 — 이전 대화 기록과 분리됩니다'}
+              style={{
+                marginLeft: 'auto', fontSize: 12, color: 'var(--t-lo)', fontFamily: 'inherit',
+                background: 'none', border: 'none', padding: '3px 4px',
+                cursor: loading ? 'not-allowed' : 'pointer',
+                opacity: loading ? 0.5 : 1, transition: 'color 0.12s',
+              }}
+              onMouseEnter={e => { if (!loading) e.currentTarget.style.color = 'var(--t-hi)' }}
+              onMouseLeave={e => { e.currentTarget.style.color = 'var(--t-lo)' }}
+            >새 대화</button>
           </div>
 
           {/* messages */}

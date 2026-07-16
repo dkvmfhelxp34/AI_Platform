@@ -452,10 +452,11 @@ function CategoryGroupHeader({ label, count, expanded, onToggle }: {
       background: 'none', border: 'none', cursor: 'pointer', borderRadius: 6, textAlign: 'left',
       transition: 'background 0.12s var(--ease-out)',
     }}>
-      <span aria-hidden="true" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-        fontSize: 16, lineHeight: 1, color: 'var(--t-mid)',
-        transform: expanded ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.15s var(--ease-out)',
-        flexShrink: 0 }}>▸</span>
+      <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true" style={{
+        transform: expanded ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s var(--ease-out)',
+        flexShrink: 0 }}>
+        <path d="M5.5 3 L10.5 8 L5.5 13" stroke="var(--t-mid)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
       <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--t-mid)', whiteSpace: 'nowrap' }}>{label}</span>
       <span className="tnum" style={{ fontSize: 13, fontWeight: 700, color: 'var(--t-lo)' }}>{count}</span>
       <span style={{ flex: 1, height: 1, background: 'var(--line-soft)', marginLeft: 2 }} />

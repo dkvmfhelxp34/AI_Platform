@@ -674,14 +674,18 @@ function TimeseriesSection({ buoy, range, setRange, metric, setMetric, ts, loadi
                 "떠 있는" 분석 표면을 준다. 그리드·데이터 잉크가 이 면 위에서 대비를 갖는다. */}
             <div style={{ background: PLOT_BG_HEX, borderRadius: 8, padding: '20px 6px 2px', position: 'relative' }}>
             {/* 단위 태그 — Y축이 무엇을 나타내는지 플롯 좌상단에서 즉시 확인 가능(제목의 단위 표기와
-                이중 확인). 플롯면보다 확실히 어둡게 대비를 줘 또렷이 읽힌다. */}
+                이중 확인). 플롯면보다 확실히 어둡게 대비를 줘 또렷이 읽힌다.
+                §26 — 이 배지(top:12, 실측 높이 ≈26px)가 차지하는 세로 영역이 <ComposedChart margin.top>
+                이 예약해 두는 여백(과거 22px, 패딩 20px 포함해도 42px)보다 실제로 더 커서, Y축 맨 위
+                눈금("5"/"1008" 등)과 3~4px 겹쳤다(실측). margin.top 을 32 로 늘려 배지 하단과 첫 눈금
+                사이에 항상 ~6px 여유를 둔다(4개 지표 전부 배지 높이가 동일해 이 여유는 지표 무관). */}
             <div className="tnum" style={{
               position: 'absolute', top: 12, left: 16, zIndex: 2, fontSize: 13, fontWeight: 700,
               color: 'var(--t-mid)', background: 'var(--bg-panel)', border: '1px solid var(--line)',
               borderRadius: 5, padding: '2px 7px', pointerEvents: 'none',
             }}>{metricCfg.unit}</div>
             <ResponsiveContainer width="100%" height={264}>
-              <ComposedChart data={chartData} margin={{ top: 22, right: 10, left: 2, bottom: 2 }}>
+              <ComposedChart data={chartData} margin={{ top: 32, right: 10, left: 2, bottom: 2 }}>
                 <defs>
                   <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
                     <stop offset="0%" stopColor={ACCENT_HEX} stopOpacity={0.32} />

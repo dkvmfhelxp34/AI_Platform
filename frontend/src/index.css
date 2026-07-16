@@ -163,7 +163,12 @@ button { -webkit-tap-highlight-color: transparent; }
   box-shadow: var(--shadow-overlay) !important;
   padding: 0 !important;
   color: var(--t-hi) !important;
+  /* §26 — 값 3종(예: 파고/풍속/수온, 풍속엔 "남서 225°" 같은 긴 방위 라벨 포함)이 한 줄에 안 눌리고
+     들어가도록 폭을 컨텐츠에 맡긴다 — 내부 wrapper(BuoyPopupContent)가 width:max-content 이므로
+     이 컨테이너도 고정폭 대신 그 실측 폭을 그대로 따라가게 한다. */
   min-width: 272px;
+  width: max-content;
+  max-width: 420px;
 }
 .buoy-ml-popup .maplibregl-popup-tip {
   border-top-color: var(--bg-float) !important;
@@ -202,6 +207,10 @@ button { -webkit-tap-highlight-color: transparent; }
 .maplibregl-ctrl-group button { background: none !important; color: var(--t-mid) !important; }
 .maplibregl-ctrl-group button:hover { background: var(--bg-hover) !important; color: var(--t-hi) !important; }
 .maplibregl-ctrl-group button + button { border-top: 1px solid var(--line) !important; }
+/* §26 — 전수검사 발견: 줌 +/- 아이콘은 MapLibre 기본 SVG(고정 fill #333, background-image 라 위
+   .maplibregl-ctrl-group button 의 color 오버라이드가 전혀 안 먹는다)라 다크 --bg-float 컨트롤
+   배경 위에서 사실상 안 보였다(대비 거의 0). invert 로 밝게 뒤집어 다크 배경에서도 또렷이 보이게 한다. */
+.maplibregl-ctrl-icon { filter: invert(1) brightness(1.35); }
 .maplibregl-ctrl-attrib { background: rgba(15,20,27,0.72) !important; color: var(--t-lo) !important; border-radius: 4px !important; }
 .maplibregl-ctrl-attrib a { color: var(--accent-h) !important; }
 

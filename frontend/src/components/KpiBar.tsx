@@ -167,8 +167,11 @@ function StatTile({ label, value, unit, sub, color, delta, title, onClick }: {
           {delta != null && <DeltaBadge delta={delta} />}
         </span>
         {sub && (
+          // §26 — whiteSpace:nowrap 없이는 overflow:hidden+textOverflow:ellipsis 가 아무 효과가
+          // 없다(줄바꿈이 먼저 일어나 2줄로 꺾인다) — 긴 지점명(예: "경포대해수욕장")이 최대 파고/풍속
+          // 값을 아래로 밀어내는 걸 막는다.
           <span style={{ fontSize: 13, color: 'var(--t-lo)', fontWeight: 600, maxWidth: 150,
-            overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {sub}
           </span>
         )}

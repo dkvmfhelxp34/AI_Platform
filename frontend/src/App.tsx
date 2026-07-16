@@ -49,7 +49,9 @@ export default function App() {
 // §25 — 버튼 자체에 uiz(zoom) 를 걸어 QHD/UHD 에서도 클릭 타깃이 미니어처로 안 보이게 한다
 // (감싸는 width:0 래퍼는 레이아웃 스페이서 역할만이라 스케일 대상에서 제외).
 function PanelToggle({ open, side, onClick }: { open: boolean; side: 'left' | 'right'; onClick: () => void }) {
-  const icon = side === 'left' ? (open ? '‹' : '›') : (open ? '›' : '‹')
+  // §26 — 전수검사: '‹'/'›' 텍스트 글리프(fontSize 16)가 17×48px 칩 안에서 획이 가늘고 작아 보였다
+  // (§25-b 카테고리 그룹 셰브런과 동일한 결함 패턴) — SVG 캐럿으로 교체해 시각적 무게를 확보한다.
+  const pointLeft = side === 'left' ? open : !open
   return (
     <div style={{ width: 0, flexShrink: 0, position: 'relative', zIndex: 10 }}>
       <button onClick={onClick} className="panel-toggle uiz"
@@ -69,8 +71,12 @@ function PanelToggle({ open, side, onClick }: { open: boolean; side: 'left' | 'r
           border: '1px solid var(--line)',
           borderRadius: side === 'left' ? '0 8px 8px 0' : '8px 0 0 8px',
           boxShadow: 'var(--shadow-md)', transition: 'background 0.12s, color 0.12s',
-          fontSize: 16, fontWeight: 700, lineHeight: 1,
-        }}>{icon}</span>
+        }}>
+          <svg width="11" height="11" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <path d={pointLeft ? 'M10.5 3 L5.5 8 L10.5 13' : 'M5.5 3 L10.5 8 L5.5 13'}
+              stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </span>
       </button>
     </div>
   )

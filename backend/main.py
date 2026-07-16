@@ -201,6 +201,14 @@ async def api_chat(req: chat_mod.ChatRequest):
     )
 
 
+# ── /api/chat/history — 세션 대화 복원(새로고침·백엔드 재시작 내성). 프론트가 localStorage 로
+# 고정한 session_id 를 그대로 넘기면, chat.py 가 실제 답변에 쓰는 것과 동일한 in-memory/jsonl
+# 경로(`_chat_hist_get`)로 이전 user/assistant 턴을 되돌려준다(7일 보존, chat.py 참고).
+@app.get("/api/chat/history")
+def api_chat_history(session_id: str | None = None):
+    return chat_mod.get_chat_history(session_id)
+
+
 # ── SPA(dist) 정적 서빙 — Phase 1 이후 frontend/dist 가 생기면 자동 반영.
 # 반드시 모든 /api 라우트 정의 이후의 최후 mount.
 _DIST_DIR = Path(__file__).resolve().parent.parent / "frontend" / "dist"

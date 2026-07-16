@@ -185,9 +185,12 @@ function buildMarkerInnerHTML(b: MergedBuoy, selected: boolean, baseLayer: BaseL
 // ── 팝업 내용 (React) — Wave 3b "가벼운 티저" 재설계 ──────────────────────
 function ValueCell({ label, value, unit, color }: { label: string; value: string; unit?: string; color?: string }) {
   return (
-    <div style={{ background: 'var(--bg-panel)', border: '1px solid var(--line)', borderRadius: 7, padding: '8px 9px' }}>
-      <div className="eyebrow" style={{ marginBottom: 4, fontSize: 13 }}>{label}</div>
-      <div className="tnum" style={{ fontSize: 18, fontWeight: 700, color: color ?? 'var(--t-hi)' }}>
+    // §26 — flex: 1 1 auto + minWidth: max-content 로 컨텐츠 폭 아래로는 절대 눌리지 않는다(3열이
+    // 들어와도 "풍속 · 남서 225°" 같은 긴 라벨이 줄바꿈되는 대신, 부모(팝업)가 옆으로 넓어진다).
+    <div style={{ background: 'var(--bg-panel)', border: '1px solid var(--line)', borderRadius: 7, padding: '8px 9px',
+      flex: '1 1 auto', minWidth: 'max-content' }}>
+      <div className="eyebrow" style={{ marginBottom: 4, fontSize: 13, whiteSpace: 'nowrap' }}>{label}</div>
+      <div className="tnum" style={{ fontSize: 18, fontWeight: 700, color: color ?? 'var(--t-hi)', whiteSpace: 'nowrap' }}>
         {value}{unit && <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--t-lo)', marginLeft: 2 }}>{unit}</span>}
       </div>
     </div>
@@ -211,7 +214,8 @@ function BuoyPopupContent({ b }: { b: MergedBuoy }) {
     // §25 — uiz 는 이 내부 콘텐츠 wrapper 에만 건다(popupEl 자체가 아니라) — MapLibre 는 팝업을
     // 감싸는 .maplibregl-popup-content 의 실측 크기로 앵커를 계산하는데, 이 div 가 zoom 으로
     // 커지면 그 실측 크기에 자연히 반영되어 앵커 계산이 어긋나지 않는다.
-    <div className="uiz" style={{ padding: '16px 18px 18px', fontFamily: 'var(--font-ui)', color: 'var(--t-mid)', fontSize: 13.5, width: 296 }}>
+    <div className="uiz" style={{ padding: '16px 18px 18px', fontFamily: 'var(--font-ui)', color: 'var(--t-mid)', fontSize: 13.5,
+      width: 'max-content', minWidth: 272, maxWidth: 420 }}>
       {/* 헤더 — 글리프 + 한글명(대) + 영문 + (기관명) + 상태칩 */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8, paddingRight: 18, marginBottom: 10 }}>
         <div style={{ minWidth: 0, display: 'flex', alignItems: 'flex-start', gap: 9 }}>
@@ -245,7 +249,9 @@ function BuoyPopupContent({ b }: { b: MergedBuoy }) {
       {/* 핵심값 2~3종(임계값 색) — 스파크라인이 뒤따르면 여백 확보, 스파크라인이 없으면(마지막
           콘텐츠) 컨테이너 하단 패딩에만 기대 여백을 중복시키지 않는다. */}
       {cells.length > 0 ? (
-        <div style={{ display: 'grid', gridTemplateColumns: `repeat(${cells.length}, 1fr)`, gap: 6, marginBottom: b.hasLive ? 10 : 0 }}>
+        // §26 — 고정 1/3 그리드(gridTemplateColumns: 1fr×N) 대신 flex 행: 각 셀은 자기 컨텐츠
+        // 폭만큼만 차지하고(minWidth: max-content, 위 ValueCell), 남는 여백만 균등 배분한다.
+        <div style={{ display: 'flex', gap: 6, marginBottom: b.hasLive ? 10 : 0 }}>
           {cells.map(c => <ValueCell key={c.label} {...c} />)}
         </div>
       ) : (
