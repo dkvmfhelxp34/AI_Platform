@@ -194,7 +194,6 @@ export default function ChatPanel() {
           }}>
             <span className="chat-live-dot" style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--accent)', flexShrink: 0 }} />
             <span style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--t-hi)' }}>AI 어시스턴트</span>
-            <span style={{ fontSize: 13, color: 'var(--t-lo)' }}>부이 데이터 기반</span>
             {hasMessages && (
               <button
                 onClick={resetChat}
@@ -242,7 +241,7 @@ function EmptyState({ onSelect }: { onSelect: (msg: string) => void }) {
       <div style={{ textAlign: 'center' }}>
         <div style={{ fontSize: 30, marginBottom: 8, opacity: 0.85 }}>💬</div>
         <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--t-hi)', marginBottom: 4 }}>
-          부이 데이터 AI 어시스턴트
+          AI 어시스턴트
         </div>
         <div style={{ fontSize: 13, color: 'var(--t-lo)', lineHeight: 1.6, maxWidth: 280, margin: '0 auto' }}>
           실시간 부이 관측값·수신상태·통계를 조회해 답합니다. 예보는 모의/시연용입니다.

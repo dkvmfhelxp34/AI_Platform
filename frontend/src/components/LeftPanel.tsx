@@ -1,5 +1,6 @@
 /**
- * LeftPanel — §19(2026-07-16) "통합 리스트(깔끔)" 하단 재설계 + §25(2026-07-16) 디클러터 패스.
+ * LeftPanel — §19(2026-07-16) "통합 리스트(깔끔)" 하단 재설계 + §25(2026-07-16) 디클러터 패스
+ * + §25-b(2026-07-16) 카테고리 그룹 아코디언.
  * - 상단(유지): 상태 3타일(필터와 동일 소스로 클릭 토글).
  * - **필터 섹션 축소(§25)**: "상태" 체크박스 그룹 삭제(바로 위 3타일이 이미 같은 visibleStatuses
  *   를 토글해 완전 중복이었다) — 남은 건 "유형" 그룹 하나뿐이라 헤더 두 줄(필터→유형) 대신 한 줄
@@ -12,9 +13,14 @@
  * - 행은 34~40px 높이의 단일 라인(글리프+이름+(기관)+우측 값)으로 통일 — 전 UnifiedRow 하나가
  *   variant(exception|normal)로 두 톤을 렌더한다.
  * - 기관명: 모든 행에 "(기상청)"/"(국립해양조사원)" 병기(기존 방침 유지).
+ * - **카테고리 그룹 아코디언(§25-b)**: 4개 그룹 헤더가 토글 버튼 — 기본 전부 접힘(슬림 헤더만
+ *   노출, 행 없음) · 검색어가 있으면 collapsedGroups 무시하고 매치된 그룹은 강제 펼침(결과는
+ *   항상 보임) · 지도 마커 클릭 등으로 selectedStationId 가 바뀌면 그 부이의 카테고리를
+ *   collapsedGroups 에서 제거해 자동으로 펼친다. 패널 자체는 App 에서 display:none 으로만
+ *   숨기므로(언마운트 아님) 이 접힘 상태는 별도 영속화 없이 그대로 유지된다.
  * - 최종 세로 순서: 부이 수신 현황(타일) → 유형 필터 → 검색+정렬 → 통합 리스트.
  */
-import { useMemo, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { useStore } from '../store'
 import { liveBuoys, compactElapsed, type MergedBuoy } from '../utils/buoys'
@@ -84,8 +90,32 @@ export default function LeftPanel() {
   const [searchFocused, setSearchFocused] = useState(false)
   const searchInputRef = useRef<HTMLInputElement>(null)
 
+  // §25-b — 카테고리 그룹 아코디언 접힘 상태(기본 전부 접힘). 검색 중엔 무시(강제 펼침, 아래
+  // isGroupExpanded 참고), 선택된 부이가 바뀌면 그 그룹만 자동 펼침(아래 useEffect).
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<BuoyCategory>>(new Set(CATEGORY_ORDER))
+  const toggleGroup = (cat: BuoyCategory) => setCollapsedGroups(prev => {
+    const next = new Set(prev)
+    if (next.has(cat)) next.delete(cat); else next.add(cat)
+    return next
+  })
+
   // 무데이터(수신 이력 없음) 지점은 이미 여기서 제외된 데이터셋(정상/지연/미수신만)
   const buoys = useMemo(() => liveBuoys(stations, live), [stations, live])
+
+  // §25-b — 지도 마커 클릭 등으로 선택된 부이가 바뀌면, 그 부이가 속한 카테고리 그룹이 접혀
+  // 있을 때만 펼친다(이미 펼쳐져 있으면 상태 갱신 없음 — prev 그대로 반환해 리렌더 스킵).
+  useEffect(() => {
+    if (!selectedStationId) return
+    const b = buoys.find(x => x.id === selectedStationId)
+    if (!b) return
+    const cat = categoryOf(b)
+    setCollapsedGroups(prev => {
+      if (!prev.has(cat)) return prev
+      const next = new Set(prev)
+      next.delete(cat)
+      return next
+    })
+  }, [selectedStationId, buoys])
 
   const statusCounts = useMemo(() => {
     const c: Record<BuoyStatus, number> = { '정상': 0, '지연': 0, '미수신': 0 }
@@ -280,10 +310,13 @@ export default function LeftPanel() {
         {CATEGORY_ORDER.map(cat => {
           const list = grouped.get(cat) ?? []
           if (list.length === 0) return null
+          // §25-b — 검색 중엔 collapsedGroups 를 무시하고 항상 펼침(매치 결과가 숨겨지지 않게).
+          const expanded = search.trim() ? true : !collapsedGroups.has(cat)
           return (
             <div key={cat}>
-              <CategoryGroupHeader label={CATEGORY_LABEL[cat]} count={list.length} />
-              {list.map(b => (
+              <CategoryGroupHeader label={CATEGORY_LABEL[cat]} count={list.length} expanded={expanded}
+                onToggle={() => toggleGroup(cat)} />
+              {expanded && list.map(b => (
                 <UnifiedRow key={b.id} b={b} variant="normal" sortMode={sortMode}
                   isSel={b.id === selectedStationId} onClick={() => requestFlyTo(b.id)} />
               ))}
@@ -407,15 +440,26 @@ function StatReadout({ status, count, active, onClick, divider }: {
   )
 }
 
-/** 전체 리스트 카테고리 그룹 헤더(§18-3, 바다누리식) — 라벨 + 카운트 + 얇은 구분선.
- *  필터 섹션 헤더(유형 그룹, §25 — 한 줄로 접힘)와는 별개 — 이쪽은 본문 콘텐츠 섹션 헤더다. */
-function CategoryGroupHeader({ label, count }: { label: string; count: number }) {
+/** 전체 리스트 카테고리 그룹 헤더(§18-3, 바다누리식 → §25-b 아코디언 토글) — 셰브런 + 라벨 +
+ *  카운트 + 얇은 구분선을 감싸는 전폭 클릭 가능 버튼. 필터 섹션 헤더(유형 그룹, §25 — 한 줄로
+ *  접힘)와는 별개 — 이쪽은 본문 콘텐츠 섹션 헤더다. */
+function CategoryGroupHeader({ label, count, expanded, onToggle }: {
+  label: string; count: number; expanded: boolean; onToggle: () => void
+}) {
   return (
-    <div style={{ display: 'flex', alignItems: 'baseline', gap: 7, padding: '9px 8px 5px' }}>
+    <button onClick={onToggle} aria-expanded={expanded} className="group-header-btn" style={{
+      display: 'flex', width: '100%', alignItems: 'center', gap: 8, padding: '9px 8px 5px',
+      background: 'none', border: 'none', cursor: 'pointer', borderRadius: 6, textAlign: 'left',
+      transition: 'background 0.12s var(--ease-out)',
+    }}>
+      <span aria-hidden="true" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+        fontSize: 16, lineHeight: 1, color: 'var(--t-mid)',
+        transform: expanded ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.15s var(--ease-out)',
+        flexShrink: 0 }}>▸</span>
       <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--t-mid)', whiteSpace: 'nowrap' }}>{label}</span>
       <span className="tnum" style={{ fontSize: 13, fontWeight: 700, color: 'var(--t-lo)' }}>{count}</span>
       <span style={{ flex: 1, height: 1, background: 'var(--line-soft)', marginLeft: 2 }} />
-    </div>
+    </button>
   )
 }
 

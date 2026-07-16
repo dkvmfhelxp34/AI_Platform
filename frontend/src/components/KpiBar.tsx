@@ -13,7 +13,7 @@
  */
 import { useEffect, useMemo, useRef } from 'react'
 import { useShallow } from 'zustand/react/shallow'
-import { useStore } from '../store'
+import { ANOMALY_STATUSES, useStore } from '../store'
 import { formatStationName, liveBuoys } from '../utils/buoys'
 
 function usePrevious<T>(value: T): T | undefined {
@@ -34,6 +34,9 @@ export default function KpiCluster() {
     }))
   )
   const requestFlyTo = useStore(s => s.requestFlyTo)
+  // "수신 이상" 필터가 현재 적용 중인지 — store.filterAlertsOnly() 의 토글 판정과 동일한 식.
+  const alertsFilterActive = useStore(s => s.visibleStatuses.size === ANOMALY_STATUSES.length
+    && ANOMALY_STATUSES.every(st => s.visibleStatuses.has(st)))
 
   const prevAlerts = usePrevious(status?.alerts)
   const prevMaxWave = usePrevious(status?.max_wave?.value)
@@ -78,7 +81,8 @@ export default function KpiCluster() {
 
   return (
     <div style={{ display: 'flex', alignItems: 'stretch', gap: 14, flexShrink: 0 }}>
-      <AlertStat alerts={alerts} color={alertsColor} delta={alertsDelta} tint={alertsTint} onClick={filterAlertsOnly} />
+      <AlertStat alerts={alerts} color={alertsColor} delta={alertsDelta} tint={alertsTint}
+        active={alertsFilterActive} onClick={filterAlertsOnly} />
       <Divider />
       <StatTile label="정상 가동률" value={uptimePct == null ? '—' : String(uptimePct)} unit="%" color={uptimeColor}
         title="정상 판정기준: 최근 2시간 이내 수신" />
@@ -109,17 +113,19 @@ function DeltaBadge({ delta, positiveIsBad = true }: { delta: number; positiveIs
 }
 
 /** 수신 이상 — 클릭 가능한 필터 스탯. 0건이 아니면 소프트 필 배경으로 눈에 띄게(계도적 침묵 해제),
- *  단 KpiTile 처럼 flex:1 로 늘어나지 않고 컨텐츠폭 그대로 우측 클러스터에 자리한다. */
-function AlertStat({ alerts, color, delta, tint, onClick }: {
-  alerts: number | null; color: string; delta: number; tint?: string; onClick: () => void
+ *  단 KpiTile 처럼 flex:1 로 늘어나지 않고 컨텐츠폭 그대로 우측 클러스터에 자리한다.
+ *  active(필터 적용 중)면 accent 테두리로 토글 상태를 표시 — 다시 클릭하면 해제된다. */
+function AlertStat({ alerts, color, delta, tint, active, onClick }: {
+  alerts: number | null; color: string; delta: number; tint?: string; active: boolean; onClick: () => void
 }) {
   const restBg = tint ?? 'transparent'
   return (
-    <button onClick={onClick} title="지연·미수신 부이 수 — 클릭하면 이상 있는 부이만 필터링" style={{
+    <button onClick={onClick} aria-pressed={active}
+      title="지연·미수신 부이만 필터링 — 다시 클릭하면 해제" style={{
       display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 1,
-      background: restBg, border: 'none', borderRadius: 8,
+      background: restBg, border: active ? '1px solid var(--accent)' : '1px solid transparent', borderRadius: 8,
       padding: tint ? '4px 12px' : '4px 8px', cursor: 'pointer', font: 'inherit', textAlign: 'left',
-      transition: 'background 0.12s',
+      transition: 'background 0.12s, border-color 0.12s',
     }}
       onMouseEnter={e => { e.currentTarget.style.background = 'var(--bg-hover)' }}
       onMouseLeave={e => { e.currentTarget.style.background = restBg }}>

@@ -41,8 +41,9 @@
  *             걸면 앵커가 어긋난다) — 대신 uiZoom() 로 glyph/라벨/halo px 를 JS 에서 직접 배율해
  *             buildMarkerInnerHTML 에 반영한다. 지도 위에 뜨는 React 오버레이(베이스토글·범례·
  *             필터칩·팝업 내용 wrapper)는 일반 UI 크롬이므로 className="uiz" 로 처리한다. 화면
- *             폭이 §25 브레이크포인트(2400/3300px)를 넘나들 때 마커를 새 배율로 다시 그려야 하므로
- *             debounce 된 resize 리스너가 zoomGen 을 올려 마커 생성 이펙트를 강제 재실행시킨다.
+ *             폭이 §25 브레이크포인트(3300px, UHD 만 — QHD 는 밀도 유지를 위해 배율 없이 1 그대로)를
+ *             넘나들 때 마커를 새 배율로 다시 그려야 하므로 debounce 된 resize 리스너가 zoomGen 을
+ *             올려 마커 생성 이펙트를 강제 재실행시킨다.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
@@ -87,10 +88,10 @@ const ATTRIBUTION = {
 // 마커 히트박스 = el 자체의 고정 크기(anchor 기준 박스, 절대 변하지 않음 — 드리프트 방지의 핵심).
 // 사용자 피드백(밀도·크기) 반영해 이전 대비 축소 — 카운트 배지 클러스터링을 쓰지 않는 대신
 // 저줌에서의 시각적 밀도는 이 작은 코어 크기 + 저채도 색 + 라벨 기본숨김으로만 완화한다.
-// §25 — 아래 두 상수는 FHD 기준값. 실제 렌더 시에는 uiZoom() 를 곱해 QHD/UHD 에서도 물리적으로
-// 읽히는 크기를 유지한다(지도 캔버스 자체는 비스케일이라 마커만 JS 로 별도 배율). CORE_D=17 은
-// UHD(zoom 1.65)에서 글리프가 ≥26px 로 남도록 잡은 하한(17*1.65≈28.1) — 13이면 21.5px 로
-// 확대 후에도 미니어처처럼 보였다.
+// §25 — 아래 두 상수는 FHD 기준값. 실제 렌더 시에는 uiZoom() 를 곱해 UHD 에서도 물리적으로 읽히는
+// 크기를 유지한다(QHD 는 배율 없이 1 — 밀도 유지. 지도 캔버스 자체는 비스케일이라 마커만 JS 로
+// 별도 배율). CORE_D=17 은 UHD(zoom 1.5)에서 글리프가 ≥25px 로 남도록 잡은 하한(17*1.5=25.5) —
+// 13이면 19.5px 로 확대 후에도 미니어처처럼 보였다.
 const MARKER_BOX = 22
 const CORE_D = 17
 
@@ -279,13 +280,13 @@ function Tag({ label }: { label: string }) {
 // ── Main component ──────────────────────────────────────────────────────
 export default function MapViewGL() {
   const { stations, live, liveLoadedOnce, baseLayer, setBaseLayer, selectedStationId, setSelectedStationId, flyToRequest, openDetail,
-    closeDetail, detailOpenId, visibleStatuses, visibleCategories } = useStore(
+    closeDetail, detailOpenId, visibleStatuses, visibleCategories, resetFilters } = useStore(
     useShallow(s => ({
       stations: s.stations, live: s.live, liveLoadedOnce: s.liveLoadedOnce,
       baseLayer: s.baseLayer, setBaseLayer: s.setBaseLayer,
       selectedStationId: s.selectedStationId, setSelectedStationId: s.setSelectedStationId, flyToRequest: s.flyToRequest,
       openDetail: s.openDetail, closeDetail: s.closeDetail, detailOpenId: s.detailOpenId,
-      visibleStatuses: s.visibleStatuses, visibleCategories: s.visibleCategories,
+      visibleStatuses: s.visibleStatuses, visibleCategories: s.visibleCategories, resetFilters: s.resetFilters,
     }))
   )
 
@@ -296,8 +297,8 @@ export default function MapViewGL() {
   const mlPopupRef = useRef<maplibregl.Popup | null>(null)
   const popupBuoyIdRef = useRef<string | null>(null)
   const [mapReady, setMapReady] = useState(false)
-  // §25 — 창 폭이 QHD/UHD 브레이크포인트(2400/3300px)를 넘나들면 --ui-zoom 이 바뀌어 마커를 새
-  // 배율로 다시 그려야 한다. debounce(200ms) 된 resize 리스너가 이 카운터를 올려 마커 생성
+  // §25 — 창 폭이 UHD 브레이크포인트(3300px)를 넘나들면 --ui-zoom 이 바뀌어(QHD 는 배율 없이 1
+  // 유지) 마커를 새 배율로 다시 그려야 한다. debounce(200ms) 된 resize 리스너가 이 카운터를 올려 마커 생성
   // 이펙트(아래)를 강제 재실행시킨다 — 이펙트 안에서 zoomGen 변화를 감지하면 기존 마커를 전부
   // 지우고 새 크기로 재생성한다(단순 innerHTML 갱신은 el 자체의 MARKER_BOX 크기를 못 바꾸므로).
   const [zoomGen, setZoomGen] = useState(0)
@@ -626,10 +627,16 @@ export default function MapViewGL() {
           때만 "N/137 · 필터 적용중"으로 노출해 지금 화면이 전체가 아님을 알려준다. */}
       {filterActive && (
         <div className="uiz" style={{ position: 'absolute', top: 12, right: 12, zIndex: 900, animation: 'fade-in 0.4s ease both' }}>
-          <div className="glass-chip tnum" style={{ borderRadius: 6, padding: '5px 11px', fontSize: 13, fontWeight: 600, color: 'var(--t-hi)' }}>
+          <button onClick={resetFilters} title="클릭하면 필터 해제" className="glass-chip tnum" style={{
+            borderRadius: 6, padding: '5px 11px', fontSize: 13, fontWeight: 600, color: 'var(--t-hi)',
+            cursor: 'pointer', font: 'inherit', margin: 0, transition: 'background 0.12s',
+          }}
+            onMouseEnter={e => { e.currentTarget.style.background = 'var(--bg-hover)' }}
+            onMouseLeave={e => { e.currentTarget.style.background = 'var(--bg-float)' }}>
             부이 {visibleBuoys.length}/{buoys.length}개소
             <span style={{ marginLeft: 7, color: 'var(--accent-h)', fontWeight: 700 }}>· 필터 적용중</span>
-          </div>
+            <span style={{ marginLeft: 4, fontSize: 13, color: 'var(--accent-h)' }}>×</span>
+          </button>
         </div>
       )}
 

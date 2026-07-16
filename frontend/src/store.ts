@@ -3,7 +3,8 @@ import type { BaseLayer, BuoyStatus, LiveItem, StationMeta, StatusResponse } fro
 import { CATEGORY_ORDER, type BuoyCategory } from './utils/buoyCategory'
 
 const ALL_STATUSES: BuoyStatus[] = ['정상', '지연', '미수신']
-const ANOMALY_STATUSES: BuoyStatus[] = ['지연', '미수신']
+// KpiBar 의 "수신 이상" 필 활성 상태 판정에도 재사용(export) — 동일한 이상-상태 집합을 한 곳에서만 정의.
+export const ANOMALY_STATUSES: BuoyStatus[] = ['지연', '미수신']
 
 interface Store {
   stations: StationMeta[]
@@ -47,7 +48,8 @@ interface Store {
   toggleCategory: (cat: BuoyCategory) => void
   setAllCategories: (on: boolean) => void
   resetFilters: () => void
-  /** KpiBar "활성 경보 N건" 클릭 → 좌패널/지도 필터를 지연·미수신만("이상만")으로 좁힌다. */
+  /** KpiBar "수신 이상" 클릭 → 좌패널/지도 필터를 지연·미수신만("이상만")으로 좁힌다.
+   *  이미 이상만 필터링된 상태에서 다시 누르면 전체 상태로 해제(토글). */
   filterAlertsOnly: () => void
   fetchStations: () => Promise<void>
   fetchLive: () => Promise<void>
@@ -101,7 +103,11 @@ export const useStore = create<Store>((set, get) => ({
   resetFilters: () => set({
     visibleStatuses: new Set(ALL_STATUSES), visibleCategories: new Set(CATEGORY_ORDER),
   }),
-  filterAlertsOnly: () => set({ visibleStatuses: new Set(ANOMALY_STATUSES) }),
+  filterAlertsOnly: () => set((s) => {
+    const isAlertsOnly = s.visibleStatuses.size === ANOMALY_STATUSES.length
+      && ANOMALY_STATUSES.every((st) => s.visibleStatuses.has(st))
+    return { visibleStatuses: new Set(isAlertsOnly ? ALL_STATUSES : ANOMALY_STATUSES) }
+  }),
 
   fetchStations: async () => {
     try {
