@@ -64,7 +64,9 @@ import WaveSparkline from './WaveSparkline'
 // ── 지도 상수 ──────────────────────────────────────────────────────────────
 const CENTER: [number, number] = [128, 36]
 const INIT_ZOOM = 6
-const PAN_BOUNDS: maplibregl.LngLatBoundsLike = [[121, 28.5], [135.5, 41.5]]
+// 팬 경계 — 한반도 주변 해역 중심이되, 축소(줌아웃) 여유가 실제로 생기도록 여백을 넉넉히 둔다
+// (maxBounds 가 좁으면 minZoom 을 낮춰도 경계 제약 때문에 더 못 빠진다).
+const PAN_BOUNDS: maplibregl.LngLatBoundsLike = [[117, 26], [139.5, 44]]
 
 const SAT_STYLE: maplibregl.StyleSpecification = {
   version: 8,
@@ -381,7 +383,7 @@ export default function MapViewGL() {
       style: useStore.getState().baseLayer === 'light' ? LIGHT_STYLE_URL : SAT_STYLE,
       center: CENTER,
       zoom: INIT_ZOOM,
-      minZoom: 4.2,
+      minZoom: 3.6,
       maxZoom: 14,
       maxBounds: PAN_BOUNDS,
       attributionControl: false,
