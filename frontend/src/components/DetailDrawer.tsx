@@ -827,35 +827,42 @@ function SpecsBlock({ station, buoy }: { station: StationMeta | null; buoy: Merg
     return `${f.value_m}${secondary} m${depth}`
   }
 
+  const rows: { label: string; value?: string | null }[] = [
+    { label: '부이형식', value: station?.form },
+    { label: '지점코드', value: station?.stn_id ?? buoy.id },
+    { label: '관측개시일', value: station?.obs_start_date },
+    ...(specs
+      ? SPEC_ORDER.filter(k => specs[k]).map(k => ({ label: SPEC_SHORT_LABEL[k], value: specValue(k) }))
+      : [{ label: '센서 제원', value: undefined }]),
+    { label: '정밀 좌표', value: `${buoy.lat.toFixed(4)}°N, ${buoy.lon.toFixed(4)}°E` },
+  ]
+
   return (
     <Section title="지점 제원">
-      {/* '발행기관' 셀 제거(§12) — 헤더 Source 태그와 중복 */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 9 }}>
-        <SpecCell label="부이형식" value={station?.form} />
-        <SpecCell label="지점코드" value={station?.stn_id ?? buoy.id} />
-        <SpecCell label="관측개시일" value={station?.obs_start_date} />
-        {specs
-          ? SPEC_ORDER.filter(k => specs[k]).map(k => (
-            <SpecCell key={k} label={SPEC_SHORT_LABEL[k]} value={specValue(k)} />
-          ))
-          : <SpecCell label="센서 제원" value={undefined} />}
-        <SpecCell label="정밀 좌표" value={`${buoy.lat.toFixed(4)}°N, ${buoy.lon.toFixed(4)}°E`} />
-      </div>
+      {/* '발행기관' 셀 제거(§12) — 헤더 Source 태그와 중복.
+          §22 — 카드 그리드 대신 헤어라인 기반 정의(definition) 테이블로 재설계(연구용 제원표 톤).
+          색·배경 없이 borderTop 헤어라인만으로 행을 구분하고, 마지막 행 아래에 닫음선을 하나 더 둔다. */}
+      <table style={{ width: '100%', borderCollapse: 'collapse', borderBottom: '1px solid var(--line-soft)' }}>
+        <tbody>
+          {rows.map((r, i) => <SpecRow key={`${r.label}-${i}`} label={r.label} value={r.value} />)}
+        </tbody>
+      </table>
     </Section>
   )
 }
 
 /** 값이 없으면 "—" 로 명시(지어낸 값 금지 — platform_benchmarks.md Q4/NDBC "MM" 관행). */
-function SpecCell({ label, value }: { label: string; value?: string | null }) {
+function SpecRow({ label, value }: { label: string; value?: string | null }) {
   const empty = !value || value === '-'
   return (
-    <div style={{ background: 'var(--bg-elev)', border: '1px solid var(--line)', borderRadius: 6, padding: '9px 11px', boxShadow: 'var(--edge-hi)' }}>
-      <div className="eyebrow" style={{ marginBottom: 4 }}>{label}</div>
-      {empty ? (
-        <div style={{ fontSize: 13.5, fontWeight: 500, color: 'var(--t-lo)' }}>—</div>
-      ) : (
-        <div className="tnum" style={{ fontSize: 14, fontWeight: 700, color: 'var(--t-hi)' }}>{value}</div>
-      )}
-    </div>
+    <tr style={{ borderTop: '1px solid var(--line-soft)' }}>
+      <th scope="row" style={{
+        textAlign: 'left', width: '42%', fontSize: 13, fontWeight: 600, color: 'var(--t-lo)',
+        padding: '9px 12px 9px 2px', verticalAlign: 'top', fontFamily: 'inherit',
+      }}>{label}</th>
+      <td className="tnum" style={{ fontSize: 14, fontWeight: 600, color: empty ? 'var(--t-lo)' : 'var(--t-hi)', padding: '9px 0' }}>
+        {empty ? '—' : value}
+      </td>
+    </tr>
   )
 }

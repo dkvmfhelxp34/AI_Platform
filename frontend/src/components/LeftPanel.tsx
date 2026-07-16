@@ -89,7 +89,7 @@ export default function LeftPanel() {
   }, [buoys])
 
   const categoryCounts = useMemo(() => {
-    const c: Record<BuoyCategory, number> = { 'kma-b': 0, 'kma-c': 0, 'khoa': 0 }
+    const c: Record<BuoyCategory, number> = { 'kma-b': 0, 'kma-c': 0, 'khoa': 0, 'khoa-rip': 0 }
     for (const b of buoys) c[categoryOf(b)]++
     return c
   }, [buoys])
