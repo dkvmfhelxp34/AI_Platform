@@ -37,6 +37,12 @@
  *             부이를 가리지 않도록 좌하단에 배치.
  * - Filter:   store.visibleStatuses/visibleCategories(좌패널 체크박스 필터)로 마커도 함께 필터링.
  * - NoData:   무데이터(수신 이력 없음) 지점은 utils/buoys.ts liveBuoys() 단계에서 이미 제외됨.
+ * - §25 UHD:  지도 캔버스·마커는 CSS zoom(.uiz) 대상이 아니다(마커는 지도 좌표계 DOM이라 zoom을
+ *             걸면 앵커가 어긋난다) — 대신 uiZoom() 로 glyph/라벨/halo px 를 JS 에서 직접 배율해
+ *             buildMarkerInnerHTML 에 반영한다. 지도 위에 뜨는 React 오버레이(베이스토글·범례·
+ *             필터칩·팝업 내용 wrapper)는 일반 UI 크롬이므로 className="uiz" 로 처리한다. 화면
+ *             폭이 §25 브레이크포인트(2400/3300px)를 넘나들 때 마커를 새 배율로 다시 그려야 하므로
+ *             debounce 된 resize 리스너가 zoomGen 을 올려 마커 생성 이펙트를 강제 재실행시킨다.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
@@ -81,8 +87,17 @@ const ATTRIBUTION = {
 // 마커 히트박스 = el 자체의 고정 크기(anchor 기준 박스, 절대 변하지 않음 — 드리프트 방지의 핵심).
 // 사용자 피드백(밀도·크기) 반영해 이전 대비 축소 — 카운트 배지 클러스터링을 쓰지 않는 대신
 // 저줌에서의 시각적 밀도는 이 작은 코어 크기 + 저채도 색 + 라벨 기본숨김으로만 완화한다.
+// §25 — 아래 두 상수는 FHD 기준값. 실제 렌더 시에는 uiZoom() 를 곱해 QHD/UHD 에서도 물리적으로
+// 읽히는 크기를 유지한다(지도 캔버스 자체는 비스케일이라 마커만 JS 로 별도 배율). CORE_D=17 은
+// UHD(zoom 1.65)에서 글리프가 ≥26px 로 남도록 잡은 하한(17*1.65≈28.1) — 13이면 21.5px 로
+// 확대 후에도 미니어처처럼 보였다.
 const MARKER_BOX = 22
-const CORE_D = 13
+const CORE_D = 17
+
+// §25 — 지도 캔버스·마커는 .uiz(CSS zoom) 대상이 아니므로(마커는 지도 좌표계 DOM), index.css 의
+// --ui-zoom 값을 읽어와 marker glyph/라벨/halo px 를 JS 에서 직접 배율한다. 소수 1자리로 반올림.
+const uiZoom = (): number => parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--ui-zoom')) || 1
+const scalePx = (v: number, z: number): number => Math.round(v * z * 10) / 10
 
 // 고줌 진입 시 겹침 검사 없이 라벨을 전부 노출하는 기준(그 아래는 충돌기반 declutter 적용)
 const HIGH_ZOOM_LABEL = INIT_ZOOM + 3.3
@@ -125,38 +140,43 @@ function degToCompass(deg: number | null | undefined): string {
 function buildMarkerInnerHTML(b: MergedBuoy, selected: boolean, baseLayer: BaseLayer): string {
   const hex = STATUS_HEX[b.status]
   const category = categoryOf(b)
+  // §25 — 지도 캔버스·마커는 .uiz 대상이 아니므로 이 함수 안에서 직접 배율(z=1 이면 기존 FHD 값 그대로).
+  const z = uiZoom()
   // "살아있는 신호" 브리딩 — 미수신은 더 뚜렷하게(경고), 지연은 은은하게, 정상은 정적(계도적 침묵).
   const pulseClass = b.status === '미수신' ? 'buoy-marker-pulse-alert' : b.status === '지연' ? 'buoy-marker-pulse' : ''
   // 흰 보더 + 소프트 섀도 — 라이트 벡터맵·위성 이미지 양쪽에서 마커가 배경에 묻히지 않도록.
   const strokeColor = selected ? '#ffffff' : 'rgba(255,255,255,0.92)'
-  const strokeWidth = selected ? 2 : 1.6
+  const strokeWidth = scalePx(selected ? 2 : 1.6, z)
 
-  const glyph = buoyGlyphSvg(category, { fill: hex, stroke: strokeColor, strokeWidth, size: CORE_D })
+  const glyph = buoyGlyphSvg(category, { fill: hex, stroke: strokeColor, strokeWidth, size: scalePx(CORE_D, z) })
   // 다크 소프트 섀도(순검정 저알파) — 위성 텍스처·라이트 벡터 양쪽에서 글리프 윤곽을 살린다.
-  const core = `<div class="${pulseClass}" style="display:flex;filter:drop-shadow(0 1px 3px rgba(0,0,0,0.55)) drop-shadow(0 0 1.5px rgba(0,0,0,0.4));">${glyph}</div>`
-  const selRing = selected ? '<span class="buoy-marker-selected-ring"></span>' : ''
+  const core = `<div class="${pulseClass}" style="display:flex;filter:drop-shadow(0 ${scalePx(1, z)}px ${scalePx(3, z)}px rgba(0,0,0,0.55)) drop-shadow(0 0 ${scalePx(1.5, z)}px rgba(0,0,0,0.4));">${glyph}</div>`
+  // §25 — 선택 링은 CSS 고정 px(index.css .buoy-marker-selected-ring) 라 인라인 --mz 변수로 배율 전달.
+  const selRing = selected ? `<span class="buoy-marker-selected-ring" style="--mz:${z}"></span>` : ''
 
   // 라벨(§17 — 밝은 글씨 + 어두운 halo) — 흰/밝은 글자를 짙은 halo 로 감싸 위성 이미지 위에서도,
   // 라이트 벡터맵 위에서도 동일하게 읽히게 한다(배경색 반전 로직 불필요).
   // 선택된 마커는 라벨을 아예 그리지 않는다 — 팝업이 이름을 표시하므로 겹칠 가능성이 없다.
   if (selected) return `${selRing}${core}`
 
-  // QHD 100% 배율에서도 편히 읽히도록 라벨 14px. 라벨 색·halo 는 base-aware(§17 재정정 2026-07-16):
+  // QHD 100% 배율에서도 편히 읽히도록 라벨 14px(§25: uiZoom() 로 추가 배율). 라벨 색·halo 는
+  // base-aware(§17 재정정 2026-07-16):
   //  - 위성(다크 이미지): 밝은 글씨(#F1F5FA) + 어두운 halo(원래대로).
   //  - 라이트(밝은 벡터맵): 어두운 글씨(#12212E) + 흰 halo — 밝은 배경에서 밝은글씨+어두운halo 가
   //    뿌옇게 뭉개지던 문제 해소(베이스맵 자체 지명처럼 어두운 글씨로 선명하게 읽힘).
   const isLightBase = baseLayer === 'light'
   const nameColor = isLightBase ? '#12212E' : '#F1F5FA'
+  const h1 = scalePx(1.4, z), h2 = scalePx(5, z), h3 = scalePx(3, z)
   const nameHalo = isLightBase
-    ? `text-shadow:-1.4px -1.4px 0 rgba(255,255,255,0.95),1.4px -1.4px 0 rgba(255,255,255,0.95),` +
-      `-1.4px 1.4px 0 rgba(255,255,255,0.95),1.4px 1.4px 0 rgba(255,255,255,0.95),` +
-      `0 0 5px rgba(255,255,255,0.9),0 1px 3px rgba(255,255,255,0.85);`
-    : `text-shadow:-1.4px -1.4px 0 rgba(6,10,15,0.9),1.4px -1.4px 0 rgba(6,10,15,0.9),` +
-      `-1.4px 1.4px 0 rgba(6,10,15,0.9),1.4px 1.4px 0 rgba(6,10,15,0.9),` +
-      `0 0 5px rgba(0,0,0,0.85), 0 1px 3px rgba(0,0,0,0.7);`
-  const nameStyle = `font-size:14px;font-weight:700;color:${nameColor};white-space:nowrap;pointer-events:none;${nameHalo}`
+    ? `text-shadow:-${h1}px -${h1}px 0 rgba(255,255,255,0.95),${h1}px -${h1}px 0 rgba(255,255,255,0.95),` +
+      `-${h1}px ${h1}px 0 rgba(255,255,255,0.95),${h1}px ${h1}px 0 rgba(255,255,255,0.95),` +
+      `0 0 ${h2}px rgba(255,255,255,0.9),0 ${scalePx(1, z)}px ${h3}px rgba(255,255,255,0.85);`
+    : `text-shadow:-${h1}px -${h1}px 0 rgba(6,10,15,0.9),${h1}px -${h1}px 0 rgba(6,10,15,0.9),` +
+      `-${h1}px ${h1}px 0 rgba(6,10,15,0.9),${h1}px ${h1}px 0 rgba(6,10,15,0.9),` +
+      `0 0 ${h2}px rgba(0,0,0,0.85), 0 ${scalePx(1, z)}px ${h3}px rgba(0,0,0,0.7);`
+  const nameStyle = `font-size:${scalePx(14, z)}px;font-weight:700;color:${nameColor};white-space:nowrap;pointer-events:none;${nameHalo}`
   const label = `<span data-role="name" class="buoy-name-label" style="position:absolute;top:100%;left:50%;` +
-    `transform:translateX(-50%);margin-top:4px;opacity:0;${nameStyle}">${escapeHtml(b.name)}</span>`
+    `transform:translateX(-50%);margin-top:${scalePx(4, z)}px;opacity:0;${nameStyle}">${escapeHtml(b.name)}</span>`
 
   return `${selRing}${core}${label}`
 }
@@ -187,7 +207,10 @@ function BuoyPopupContent({ b }: { b: MergedBuoy }) {
   if (v.water_temp != null) cells.push({ label: '수온', value: v.water_temp.toFixed(1), unit: '℃' })
 
   return (
-    <div style={{ padding: '16px 18px 18px', fontFamily: 'var(--font-ui)', color: 'var(--t-mid)', fontSize: 13.5, width: 296 }}>
+    // §25 — uiz 는 이 내부 콘텐츠 wrapper 에만 건다(popupEl 자체가 아니라) — MapLibre 는 팝업을
+    // 감싸는 .maplibregl-popup-content 의 실측 크기로 앵커를 계산하는데, 이 div 가 zoom 으로
+    // 커지면 그 실측 크기에 자연히 반영되어 앵커 계산이 어긋나지 않는다.
+    <div className="uiz" style={{ padding: '16px 18px 18px', fontFamily: 'var(--font-ui)', color: 'var(--t-mid)', fontSize: 13.5, width: 296 }}>
       {/* 헤더 — 글리프 + 한글명(대) + 영문 + (기관명) + 상태칩 */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8, paddingRight: 18, marginBottom: 10 }}>
         <div style={{ minWidth: 0, display: 'flex', alignItems: 'flex-start', gap: 9 }}>
@@ -273,6 +296,27 @@ export default function MapViewGL() {
   const mlPopupRef = useRef<maplibregl.Popup | null>(null)
   const popupBuoyIdRef = useRef<string | null>(null)
   const [mapReady, setMapReady] = useState(false)
+  // §25 — 창 폭이 QHD/UHD 브레이크포인트(2400/3300px)를 넘나들면 --ui-zoom 이 바뀌어 마커를 새
+  // 배율로 다시 그려야 한다. debounce(200ms) 된 resize 리스너가 이 카운터를 올려 마커 생성
+  // 이펙트(아래)를 강제 재실행시킨다 — 이펙트 안에서 zoomGen 변화를 감지하면 기존 마커를 전부
+  // 지우고 새 크기로 재생성한다(단순 innerHTML 갱신은 el 자체의 MARKER_BOX 크기를 못 바꾸므로).
+  const [zoomGen, setZoomGen] = useState(0)
+  const lastZoomGenRef = useRef(0)
+  useEffect(() => {
+    let t: ReturnType<typeof setTimeout> | undefined
+    let lastZ = uiZoom()
+    const onResize = () => {
+      if (t) clearTimeout(t)
+      t = setTimeout(() => {
+        // 같은 배율 구간 안에서의 resize(예: 창을 조금씩 늘리는 중)는 마커를 다시 그릴 필요가
+        // 없다 — --ui-zoom 값 자체가 실제로 바뀐 경우(브레이크포인트를 넘은 경우)에만 재생성.
+        const z = uiZoom()
+        if (z !== lastZ) { lastZ = z; setZoomGen(g => g + 1) }
+      }, 200)
+    }
+    window.addEventListener('resize', onResize)
+    return () => { window.removeEventListener('resize', onResize); if (t) clearTimeout(t) }
+  }, [])
 
   // 무데이터(수신 이력 없음) 지점은 이미 여기서 제외된 데이터셋 — 지도에는 정상/지연/미수신만 존재
   const buoys = useMemo(() => liveBuoys(stations, live), [stations, live])
@@ -457,6 +501,18 @@ export default function MapViewGL() {
     if (!map || !mapReady) return
 
     const existing = markersRef.current
+
+    // §25 — zoomGen 이 바뀌었다(브레이크포인트를 넘는 resize) 는 것은 --ui-zoom 이 바뀌어 el 의
+    // MARKER_BOX 고정 크기 자체를 다시 잡아야 한다는 뜻 — 단순 innerHTML 갱신으론 el 크기를 못
+    // 바꾸므로 기존 마커를 전부 지워 아래 루프가 전부 새 배율로 재생성하게 한다.
+    if (lastZoomGenRef.current !== zoomGen) {
+      lastZoomGenRef.current = zoomGen
+      for (const [, m] of existing) m.remove()
+      existing.clear()
+    }
+
+    const z = uiZoom()
+    const markerBox = scalePx(MARKER_BOX, z)
     const validIds = new Set(visibleBuoys.filter(b => isFinite(b.lat) && isFinite(b.lon)).map(b => b.id))
 
     for (const [id, m] of existing) {
@@ -485,9 +541,10 @@ export default function MapViewGL() {
       } else {
         const el = document.createElement('div')
         // 고정 크기 박스(anchor='center' 기준) — 내부에 position:absolute 로 얹는 라벨/링은
-        // 이 박스 크기에 전혀 영향을 주지 않는다(줌 드리프트 방지의 핵심 불변식).
+        // 이 박스 크기에 전혀 영향을 주지 않는다(줌 드리프트 방지의 핵심 불변식). §25: markerBox 는
+        // MARKER_BOX*uiZoom() — QHD/UHD 에서도 물리적으로 같은 크기로 읽히도록.
         el.style.cssText = `display:flex;align-items:center;justify-content:center;cursor:pointer;` +
-          `position:absolute;top:0;left:0;width:${MARKER_BOX}px;height:${MARKER_BOX}px;overflow:visible;`
+          `position:absolute;top:0;left:0;width:${markerBox}px;height:${markerBox}px;overflow:visible;`
         el.style.zIndex = zIndex
         el.dataset.id = b.id
         el.dataset.status = b.status
@@ -519,7 +576,7 @@ export default function MapViewGL() {
       }
     }
     requestAnimationFrame(updateLabelVisibility)
-  }, [visibleBuoys, mapReady, selectedStationId, baseLayer, updateLabelVisibility, setSelectedStationId, openPopupFor, openDetail, closeDetail])
+  }, [visibleBuoys, mapReady, selectedStationId, baseLayer, zoomGen, updateLabelVisibility, setSelectedStationId, openPopupFor, openDetail, closeDetail])
 
   // ── 좌측 패널에서 flyTo 요청 처리 ────────────────────────────────────
   // 기존: 카메라 flyTo → moveend 시 팝업만 열었다(선택은 store.requestFlyTo 자체가
@@ -558,8 +615,8 @@ export default function MapViewGL() {
         </div>
       )}
 
-      {/* 베이스 레이어 토글 */}
-      <div style={{ position: 'absolute', top: 12, left: 12, zIndex: 900, display: 'flex', gap: 6,
+      {/* 베이스 레이어 토글 — §25: uiz(지도 위 React 오버레이는 일반 UI 크롬이라 zoom 대상) */}
+      <div className="uiz" style={{ position: 'absolute', top: 12, left: 12, zIndex: 900, display: 'flex', gap: 6,
         animation: 'fade-in 0.4s ease both' }}>
         <LayerBtn label="위성" active={baseLayer === 'sat'} onClick={() => setBaseLayer('sat')} />
         <LayerBtn label="라이트" active={baseLayer === 'light'} onClick={() => setBaseLayer('light')} />
@@ -568,7 +625,7 @@ export default function MapViewGL() {
       {/* 부이 수 칩 — 필터 미적용 시 숨김(§12: KPI·좌패널 '총 N개소'와 3중 중복). 필터가 좁혀졌을
           때만 "N/137 · 필터 적용중"으로 노출해 지금 화면이 전체가 아님을 알려준다. */}
       {filterActive && (
-        <div style={{ position: 'absolute', top: 12, right: 12, zIndex: 900, animation: 'fade-in 0.4s ease both' }}>
+        <div className="uiz" style={{ position: 'absolute', top: 12, right: 12, zIndex: 900, animation: 'fade-in 0.4s ease both' }}>
           <div className="glass-chip tnum" style={{ borderRadius: 6, padding: '5px 11px', fontSize: 13, fontWeight: 600, color: 'var(--t-hi)' }}>
             부이 {visibleBuoys.length}/{buoys.length}개소
             <span style={{ marginLeft: 7, color: 'var(--accent-h)', fontWeight: 700 }}>· 필터 적용중</span>
@@ -578,8 +635,8 @@ export default function MapViewGL() {
 
       {/* 범례 — 바다누리식 정돈 박스(§16-추가): 형태=종류 / 색=상태, 색스와치+라벨 세로 스택.
           항상 표시하는 작은 고정 패널, 잔텍스트 최소화(설명 문구·카운트 없음). 좌하단 고정
-          (2026-07-15 재지시 §11 — 챗 FAB 는 우하단이라 반대 코너로 겹침 없음). */}
-      <div style={{ position: 'absolute', left: 12, bottom: 34, zIndex: 900, animation: 'fade-in 0.5s ease both' }}>
+          (2026-07-15 재지시 §11 — 챗 FAB 는 우하단이라 반대 코너로 겹침 없음). §25: uiz 적용. */}
+      <div className="uiz" style={{ position: 'absolute', left: 12, bottom: 34, zIndex: 900, animation: 'fade-in 0.5s ease both' }}>
         <div className="map-legend" style={{ borderRadius: 10, padding: '10px 13px 11px', display: 'flex', flexDirection: 'column', gap: 9, minWidth: 150 }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: '0.02em', color: 'var(--t-lo)' }}>부이 유형</span>

@@ -1,25 +1,20 @@
 /**
- * KpiBar — 헤더 아래 전폭 KPI 밴드("운영센터" 시그니처 요소).
- * Wave 2: `/api/status`(SSOT) 를 그대로 소비 — 프론트에서 파생 지표를 재계산하지 않는다.
- * - 오해를 부르던 "평균 파고" 헤드라인 → **최대 파고 + 발생지점**(관측기록상 물리적으로 불가능한
- *   값은 백엔드가 이미 걸러낸 max_wave).
- * - **수신 이상 N건**(지연+미수신, 구 "활성 경보" — §12 전문가 패널: 기상특보 "경보"와 용어 충돌
- *   방지 위해 개명) 타일은 클릭 가능 — 좌패널/지도 필터를 "이상만"으로 좁힌다.
- * - 2026-07-15 사용자 확정: "관측 부이 N개소"(좌패널 상단 "총 N개소"와 중복)·"최근 갱신 N분 전"
- *   (헤더 신선도 배지와 중복) 타일 제거 — **수신 이상 / 정상 가동률 / 최대 파고** 3개만 유지.
+ * KpiBar — §25(2026-07-16) 헤더 임베드 KPI 클러스터(KpiCluster)로 재설계.
+ * 예전엔 헤더 아래 전폭 밴드(3타일 flex:1 스트레치)였다 — "수신 이상" 타일이 거대한 빈 슬랩처럼
+ * 늘어지고, 헤더+KPI 2단 구성 자체가 산만하다는 피드백으로 폐기. 이제 Header.tsx 안에 우측 정렬된
+ * 컨텐츠폭 4스탯 클러스터로 병합해 "커맨드바 한 줄"을 만든다(App.tsx 는 더 이상 이 컴포넌트를
+ * 전폭으로 렌더하지 않는다).
+ * - `/api/status`(SSOT) 그대로 소비 — 프론트에서 파생 지표를 재계산하지 않는다. 예외: **최대 풍속**
+ *   은 `/api/status` 에 없는 파생값이라 구 좌패널 하이라이트 칩이 쓰던 것과 동일한 liveBuoys 기반
+ *   클라이언트 계산을 그대로 이식(§25 — 좌패널에서 이전).
+ * - 4스탯: 수신 이상(클릭형 필터, 0건이 아니면 소프트 필 배경) · 정상 가동률 · 최대 파고 · 최대 풍속.
  * - 결측은 항상 "—"(0 이나 지어낸 수치 금지) — benchmark 신뢰도 원칙.
- * - 타일은 한 줄 밴드로 컴팩트하게 유지하되, QHD(2560x1440) 100% 배율에서도 편히 읽히도록
- *   라벨/서브라인 ≥13px · 숫자 값은 크고 굵게(26px) 유지한다(가독성 우선). 3개 타일이 `flex:1`로
- *   바 전체 폭에 고르게 분산되어(§12) 우측에 빈 공간이 남지 않게 한다.
- * - 2026-07-16: 바 자체가 너무 두꺼워 보인다는 사용자 피드백 — 타일 세로 패딩을 ~40% 줄이고
- *   라벨→값 간격을 좁혀 밴드 두께를 눈에 띄게 슬림화(값·라벨 크기/내용은 그대로, 세로 여백만 축소).
- * - "판정기준: 부이별 관측주기 이내 수신" 상시 문구는 제거하고 정상가동률 타일의 `title` 툴팁으로
- *   이동(§12) — 임계값이 고정 2h(§13-1)로 바뀌어 문구도 그에 맞게 갱신했다.
+ * - 로딩/에러는 클러스터 전체를 문구 한 줄로 대체(개별 스탯 스켈레톤 없음 — 헤더 한 줄 높이 유지).
  */
-import { useEffect, useRef } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { useStore } from '../store'
-import { formatStationName } from '../utils/buoys'
+import { formatStationName, liveBuoys } from '../utils/buoys'
 
 function usePrevious<T>(value: T): T | undefined {
   const ref = useRef<T>()
@@ -31,10 +26,14 @@ function fmt1(v: number | null | undefined): string {
   return v == null || !isFinite(v) ? '—' : v.toFixed(1)
 }
 
-export default function KpiBar() {
-  const { status, statusError, liveLoadedOnce, filterAlertsOnly } = useStore(
-    useShallow(s => ({ status: s.status, statusError: s.statusError, liveLoadedOnce: s.liveLoadedOnce, filterAlertsOnly: s.filterAlertsOnly }))
+export default function KpiCluster() {
+  const { status, statusError, liveLoadedOnce, filterAlertsOnly, stations, live } = useStore(
+    useShallow(s => ({
+      status: s.status, statusError: s.statusError, liveLoadedOnce: s.liveLoadedOnce,
+      filterAlertsOnly: s.filterAlertsOnly, stations: s.stations, live: s.live,
+    }))
   )
+  const requestFlyTo = useStore(s => s.requestFlyTo)
 
   const prevAlerts = usePrevious(status?.alerts)
   const prevMaxWave = usePrevious(status?.max_wave?.value)
@@ -51,48 +50,51 @@ export default function KpiBar() {
   const alerts = status?.alerts ?? null
   const alertsColor = alerts == null ? 'var(--t-lo)' : alerts === 0 ? 'var(--ok)' : alerts <= 5 ? 'var(--delay)' : 'var(--lost)'
   const alertsDelta = prevAlerts != null && alerts != null ? alerts - prevAlerts : 0
-  // 축5 — "수신 이상" > 0 이면 눈에 띄어야 한다: 은은한 앰버/적색 소프트틴트 배경 + 좌측 강조선.
-  // 0 이면(계도적 침묵) 틴트 없이 차분하게 — 아래 KpiTile 의 accent(초록/앰버/적색)는 그대로 유지.
+  // 축5 — "수신 이상" > 0 이면 눈에 띄어야 한다: 은은한 앰버/적색 소프트틴트 필 배경. 0 이면(계도적
+  // 침묵) 틴트 없이 차분하게.
   const alertsTint = alerts == null || alerts === 0 ? undefined : alerts <= 5 ? 'var(--delay-soft)' : 'var(--lost-soft)'
 
   const maxWave = status?.max_wave ?? null
   const maxWaveDelta = prevMaxWave != null && maxWave != null ? maxWave.value - prevMaxWave : 0
 
-  // 3타일만 남아 헐렁해 보이지 않도록(§12) 타일 자체가 flex:1 로 바 전체 폭에 고르게 분산된다
-  // (KpiTile wide=true 케이스, 아래 참고) — 우측 빈 공간 제거.
+  // §25 — 최대 풍속: liveBuoys() 는 이미 무데이터 지점을 제외한 데이터셋(구 LeftPanel 로직과 동일).
+  const buoys = useMemo(() => liveBuoys(stations, live), [stations, live])
+  const maxWind = useMemo(() => {
+    let best: { name: string; value: number; id: string } | null = null
+    for (const b of buoys) {
+      const w = b.values.wind_speed
+      if (w == null || !isFinite(w) || w < 0 || w > 60) continue
+      if (!best || w > best.value) best = { name: b.name, value: w, id: b.id }
+    }
+    return best
+  }, [buoys])
+
+  if (loading) {
+    return <div style={{ fontSize: 13, color: 'var(--t-lo)', fontWeight: 500, whiteSpace: 'nowrap' }}>지표 로딩 중…</div>
+  }
+  if (showError) {
+    return <div style={{ fontSize: 13, color: 'var(--lost)', fontWeight: 500, whiteSpace: 'nowrap' }}>실시간 지표 오류</div>
+  }
+
   return (
-    <div style={{
-      display: 'flex', alignItems: 'stretch', flexShrink: 0,
-      background: 'var(--bg-base)', borderBottom: '1px solid var(--line)',
-      boxShadow: 'var(--edge-hi)', padding: '0 20px', overflowX: 'auto',
-    }}>
-      {loading ? (
-        <div style={{ padding: '11px 0', fontSize: 13, color: 'var(--t-lo)', fontWeight: 500 }}>
-          운영 현황 지표를 불러오는 중…
-        </div>
-      ) : showError ? (
-        <div style={{ padding: '11px 0', fontSize: 13, color: 'var(--lost)', fontWeight: 500 }}>
-          실시간 지표를 불러오지 못했습니다
-        </div>
-      ) : (
-        <>
-          <KpiTile label="수신 이상" value={alerts == null ? '—' : String(alerts)} unit="건" accent={alertsColor}
-            delta={alertsDelta} clickable onClick={filterAlertsOnly} wide bgTint={alertsTint}
-            title="지연·미수신 부이 수 — 클릭하면 이상 있는 부이만 필터링" />
-          <KpiDivider />
-          <KpiTile label="정상 가동률" value={uptimePct == null ? '—' : String(uptimePct)} unit="%" accent={uptimeColor}
-            title="정상 판정기준: 최근 2시간 이내 수신" wide />
-          <KpiDivider />
-          <KpiTile label="최대 파고" value={maxWave ? fmt1(maxWave.value) : '—'} unit="m"
-            sub={maxWave ? formatStationName(maxWave.station_name) : '관측값 없음'} delta={maxWaveDelta} wide />
-        </>
-      )}
+    <div style={{ display: 'flex', alignItems: 'stretch', gap: 14, flexShrink: 0 }}>
+      <AlertStat alerts={alerts} color={alertsColor} delta={alertsDelta} tint={alertsTint} onClick={filterAlertsOnly} />
+      <Divider />
+      <StatTile label="정상 가동률" value={uptimePct == null ? '—' : String(uptimePct)} unit="%" color={uptimeColor}
+        title="정상 판정기준: 최근 2시간 이내 수신" />
+      <Divider />
+      <StatTile label="최대 파고" value={maxWave ? fmt1(maxWave.value) : '—'} unit="m"
+        sub={maxWave ? formatStationName(maxWave.station_name) : '관측값 없음'} delta={maxWaveDelta} />
+      <Divider />
+      <StatTile label="최대 풍속" value={maxWind ? maxWind.value.toFixed(1) : '—'} unit="m/s"
+        sub={maxWind ? formatStationName(maxWind.name) : '관측값 없음'}
+        onClick={maxWind ? () => requestFlyTo(maxWind.id) : undefined} />
     </div>
   )
 }
 
-function KpiDivider() {
-  return <div style={{ width: 1, alignSelf: 'center', height: '42%', background: 'var(--line)', flexShrink: 0 }} />
+function Divider() {
+  return <div style={{ width: 1, height: '55%', alignSelf: 'center', background: 'var(--line)', flexShrink: 0 }} />
 }
 
 function DeltaBadge({ delta, positiveIsBad = true }: { delta: number; positiveIsBad?: boolean }) {
@@ -100,60 +102,71 @@ function DeltaBadge({ delta, positiveIsBad = true }: { delta: number; positiveIs
   const up = delta > 0
   const bad = positiveIsBad ? up : !up
   return (
-    <span className="tnum" style={{
-      fontSize: 13, fontWeight: 700, marginLeft: 5,
-      color: bad ? 'var(--delay)' : 'var(--ok)',
-    }}>
+    <span className="tnum" style={{ fontSize: 12, fontWeight: 700, marginLeft: 4, color: bad ? 'var(--delay)' : 'var(--ok)' }}>
       {up ? '▲' : '▼'}{Math.abs(delta) < 1 ? Math.abs(delta).toFixed(1) : Math.round(Math.abs(delta))}
     </span>
   )
 }
 
-function KpiTile({ label, value, unit, sub, accent, delta, clickable, onClick, title, wide, bgTint }: {
-  label: string; value: string; unit?: string; sub?: string; accent?: string
-  delta?: number; clickable?: boolean; onClick?: () => void; title?: string; wide?: boolean; bgTint?: string
+/** 수신 이상 — 클릭 가능한 필터 스탯. 0건이 아니면 소프트 필 배경으로 눈에 띄게(계도적 침묵 해제),
+ *  단 KpiTile 처럼 flex:1 로 늘어나지 않고 컨텐츠폭 그대로 우측 클러스터에 자리한다. */
+function AlertStat({ alerts, color, delta, tint, onClick }: {
+  alerts: number | null; color: string; delta: number; tint?: string; onClick: () => void
 }) {
-  const Comp = clickable ? 'button' : 'div'
-  const restBg = bgTint ?? 'none'
+  const restBg = tint ?? 'transparent'
   return (
-    <Comp
-      onClick={clickable ? onClick : undefined}
-      title={title}
-      style={{
-        display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 1,
-        // 축5 — 틴트가 있을 때(수신 이상 > 0) 좌측 강조선 3px 만큼 좌측 패딩을 줄여 시각적 폭을 맞춘다.
-        // 2026-07-16: 세로 패딩 10px→6px(~40%↓)로 밴드를 슬림화(값/라벨 크기·내용은 그대로 유지).
-        padding: wide ? `6px 34px 6px ${bgTint ? 31 : 34}px` : '5px 16px', minWidth: wide ? 180 : 108, flexShrink: 0,
-        // 3타일만 남은 뒤 우측이 헐렁해 보이지 않도록(§12) wide 타일은 flex:1 로 바 전체 폭을
-        // 3등분해 균형 있게 채운다(우측 빈 공간 제거) — 상한 없이 바 폭에 맞춰 늘어난다.
-        flex: wide ? '1 1 0' : '0 0 auto',
-        background: restBg, border: 'none', borderTop: `2px solid ${accent ?? 'transparent'}`,
-        borderLeft: bgTint ? `3px solid ${accent}` : 'none',
-        cursor: clickable ? 'pointer' : 'default', textAlign: 'left', font: 'inherit',
-        transition: 'background 0.12s',
-      }}
-      onMouseEnter={clickable ? (e => (e.currentTarget.style.background = 'var(--bg-hover)')) : undefined}
-      onMouseLeave={clickable ? (e => (e.currentTarget.style.background = restBg)) : undefined}
-    >
-      <div className="eyebrow" style={{ whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 4 }}>
-        {label}
-        {clickable && <span style={{ color: 'var(--accent-h)', fontWeight: 700 }}>›</span>}
-      </div>
-      <div className="tnum" style={{
-        fontSize: wide ? 26 : 22, fontWeight: 700, lineHeight: 1.1, letterSpacing: '-0.01em',
-        color: accent ?? 'var(--t-hi)', whiteSpace: 'nowrap',
-        display: 'flex', alignItems: 'baseline',
-      }}>
-        {value}
-        {unit && <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--t-lo)', marginLeft: 4 }}>{unit}</span>}
-        {delta != null && <DeltaBadge delta={delta} />}
-      </div>
-      {sub && (
-        <div style={{ fontSize: 13, color: 'var(--t-lo)', fontWeight: 600, whiteSpace: 'nowrap',
-          overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 220 }}>
-          {sub}
-        </div>
-      )}
+    <button onClick={onClick} title="지연·미수신 부이 수 — 클릭하면 이상 있는 부이만 필터링" style={{
+      display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 1,
+      background: restBg, border: 'none', borderRadius: 8,
+      padding: tint ? '4px 12px' : '4px 8px', cursor: 'pointer', font: 'inherit', textAlign: 'left',
+      transition: 'background 0.12s',
+    }}
+      onMouseEnter={e => { e.currentTarget.style.background = 'var(--bg-hover)' }}
+      onMouseLeave={e => { e.currentTarget.style.background = restBg }}>
+      <span className="eyebrow" style={{ whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 4, lineHeight: 1 }}>
+        수신 이상
+        <span style={{ color: 'var(--accent-h)', fontWeight: 700 }}>›</span>
+      </span>
+      <span className="tnum" style={{ fontSize: 20, fontWeight: 700, letterSpacing: '-0.01em', lineHeight: 1.1,
+        color, display: 'flex', alignItems: 'baseline', whiteSpace: 'nowrap' }}>
+        {alerts == null ? '—' : alerts}
+        <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--t-lo)', marginLeft: 4 }}>건</span>
+        <DeltaBadge delta={delta} />
+      </span>
+    </button>
+  )
+}
+
+/** 정상 가동률·최대 파고·최대 풍속 공용 스탯 타일 — sub(지점명)·delta·onClick(클릭형)은 전부 선택. */
+function StatTile({ label, value, unit, sub, color, delta, title, onClick }: {
+  label: string; value: string; unit?: string; sub?: string; color?: string; delta?: number
+  title?: string; onClick?: () => void
+}) {
+  const Comp = onClick ? 'button' : 'div'
+  return (
+    <Comp onClick={onClick} title={title} style={{
+      display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 1,
+      background: 'none', border: 'none', padding: '4px 8px', borderRadius: 8,
+      cursor: onClick ? 'pointer' : 'default', font: 'inherit', textAlign: 'left',
+      transition: 'background 0.12s',
+    }}
+      onMouseEnter={onClick ? (e => { e.currentTarget.style.background = 'var(--bg-hover)' }) : undefined}
+      onMouseLeave={onClick ? (e => { e.currentTarget.style.background = 'none' }) : undefined}>
+      <span className="eyebrow" style={{ whiteSpace: 'nowrap', lineHeight: 1 }}>{label}</span>
+      <span style={{ display: 'flex', alignItems: 'baseline', gap: 6, whiteSpace: 'nowrap' }}>
+        <span className="tnum" style={{ fontSize: 20, fontWeight: 700, letterSpacing: '-0.01em', lineHeight: 1.1,
+          color: color ?? 'var(--t-hi)', display: 'flex', alignItems: 'baseline' }}>
+          {value}
+          {unit && <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--t-lo)', marginLeft: 4 }}>{unit}</span>}
+          {delta != null && <DeltaBadge delta={delta} />}
+        </span>
+        {sub && (
+          <span style={{ fontSize: 13, color: 'var(--t-lo)', fontWeight: 600, maxWidth: 150,
+            overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {sub}
+          </span>
+        )}
+      </span>
     </Comp>
   )
 }

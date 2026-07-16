@@ -2,9 +2,11 @@ import { useEffect, useState } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { useStore } from '../store'
 import dayjs from 'dayjs'
+import KpiCluster from './KpiBar'
 
-// 헤더 배지가 소켓/폴링 성공 여부가 아니라 "실제 관측 데이터의 신선도"를 반영하도록 하는 임계값
-// (SSOT — 헤더·KpiBar·좌패널이 전부 같은 data_freshness 계산치를 읽는다).
+// §25 — 헤더가 단일 커맨드바가 되어 예전 전폭 KpiBar 밴드를 흡수했다(우측 KpiCluster, 이 파일
+// 하단 렌더 참고). 헤더 배지가 소켓/폴링 성공 여부가 아니라 "실제 관측 데이터의 신선도"를
+// 반영하도록 하는 임계값(SSOT — 헤더(배지+KPI 클러스터)·좌패널이 전부 같은 data_freshness 계산치를 읽는다).
 // KMA sea_obs 는 자체 발표지연이 ~15~30분이라, 파이프라인이 건강해도 "가장 최신 관측"이 상시 15~30분
 // 나이로 잡힌다. 임계값을 이 발표지연보다 넉넉히 잡아 정상 운영이 "실시간"으로 읽히게 한다(과거 15/40분은
 // 발표지연만으로 상시 "데이터 지연"이 떠 오해를 유발했다).
@@ -50,12 +52,13 @@ export default function Header() {
   const pulse = tone === 'ok'
 
   return (
-    <header style={{
+    <header className="uiz" style={{
       background: 'var(--hdr-bg)',
       borderBottom: '1px solid var(--hdr-border)',
-      height: 60,
+      // §25 — 단일 커맨드바: 고정 height 대신 패딩+콘텐츠로 높이를 결정한다(KPI 클러스터의 2줄
+      // 스탯 콘텐츠 ~44px + 세로 패딩 10px×2 ≈ 64px 목표).
       display: 'flex', alignItems: 'center',
-      padding: '0 20px', gap: 20, flexShrink: 0,
+      padding: '10px 20px', gap: 20, flexShrink: 0,
       userSelect: 'none',
     }}>
       {/* Brand — 이모지 대신 시그니처 시안 마크(부이 + 발신 신호 실루엣) */}
@@ -74,8 +77,8 @@ export default function Header() {
 
       <div style={{ width: 1, height: 26, background: 'var(--line)', flexShrink: 0 }} />
 
-      {/* 실데이터 신선도 배지 — 소켓 상태가 아니라 data_freshness(SSOT) 기반. 헤더·KpiBar·좌패널이
-          전부 같은 계산치를 읽으므로 "실시간인데 40분 전" 같은 모순이 구조적으로 나지 않는다. */}
+      {/* 실데이터 신선도 배지 — 소켓 상태가 아니라 data_freshness(SSOT) 기반. 헤더(이 배지+KPI
+          클러스터)·좌패널이 전부 같은 계산치를 읽으므로 "실시간인데 40분 전" 같은 모순이 구조적으로 나지 않는다. */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}
         title={age != null ? `최신 관측 ${age.toFixed(1)}분 전` : undefined}>
         <span style={{
@@ -89,6 +92,12 @@ export default function Header() {
       </div>
 
       <div style={{ flex: 1 }} />
+
+      {/* §25 — KPI 클러스터(구 전폭 KpiBar 흡수). content-width 로 우측에 붙고(flex:1 스트레치
+          없음), 4스탯을 헤어라인 구분자로 나눈다. 로딩/에러는 컴포넌트 내부에서 한 줄 문구로 대체. */}
+      <KpiCluster />
+
+      <div style={{ width: 1, height: 26, background: 'var(--line)', flexShrink: 0 }} />
 
       {/* Clock — 이 플랫폼은 국내 해역 전용이라 로컬시각=KST가 자명해 태그를 생략한다 */}
       <div className="tnum" style={{ flexShrink: 0 }}>

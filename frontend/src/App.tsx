@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useStore } from './store'
 import Header from './components/Header'
-import KpiBar from './components/KpiBar'
 import LeftPanel from './components/LeftPanel'
 import MapView from './components/MapViewGL'
 import ChatPanel from './components/ChatPanel'
@@ -19,8 +18,8 @@ export default function App() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}>
+      {/* §25 — 단일 커맨드바: Header 가 예전 KpiBar(전폭 밴드)를 흡수해 상단은 이 한 줄뿐이다. */}
       <Header />
-      <KpiBar />
       <div style={{ display: 'flex', flex: 1, minHeight: 0, overflow: 'hidden' }}>
         {/* 접힘 = display:none (언마운트 아님) — 검색어 등 패널 로컬 상태 유지 */}
         <div style={{ display: leftOpen ? 'contents' : 'none' }}><LeftPanel /></div>
@@ -47,11 +46,13 @@ export default function App() {
   )
 }
 
+// §25 — 버튼 자체에 uiz(zoom) 를 걸어 QHD/UHD 에서도 클릭 타깃이 미니어처로 안 보이게 한다
+// (감싸는 width:0 래퍼는 레이아웃 스페이서 역할만이라 스케일 대상에서 제외).
 function PanelToggle({ open, side, onClick }: { open: boolean; side: 'left' | 'right'; onClick: () => void }) {
   const icon = side === 'left' ? (open ? '‹' : '›') : (open ? '›' : '‹')
   return (
     <div style={{ width: 0, flexShrink: 0, position: 'relative', zIndex: 10 }}>
-      <button onClick={onClick} className="panel-toggle"
+      <button onClick={onClick} className="panel-toggle uiz"
         title={open ? '패널 접기' : '패널 펼치기'} aria-label={open ? '패널 접기' : '패널 펼치기'}
         style={{
           position: 'absolute', top: '50%', transform: 'translateY(-50%)',

@@ -1,15 +1,18 @@
 /**
- * LeftPanel — §19(2026-07-16) "통합 리스트(깔끔)" 하단 재설계. 사용자가 이전 판(키 큰 예외
- * 카드+스파크라인 섹션)을 계속 마음에 안 들어 해 폐기하고, 아래 하나의 밀도 있는 스크롤 리스트로
- * 대체한다:
- * - 상단(유지): 상태 3타일(필터와 동일 소스) + 상태·종류 체크박스 필터 + 하이라이트 칩(최대 풍속).
- * - 검색/정렬 툴바(유지, 배치만 리스트 바로 위로 정리).
+ * LeftPanel — §19(2026-07-16) "통합 리스트(깔끔)" 하단 재설계 + §25(2026-07-16) 디클러터 패스.
+ * - 상단(유지): 상태 3타일(필터와 동일 소스로 클릭 토글).
+ * - **필터 섹션 축소(§25)**: "상태" 체크박스 그룹 삭제(바로 위 3타일이 이미 같은 visibleStatuses
+ *   를 토글해 완전 중복이었다) — 남은 건 "유형" 그룹 하나뿐이라 헤더 두 줄(필터→유형) 대신 한 줄
+ *   (유형 라벨 + 전체/모두해제 + 필터초기화)로 접는다.
+ * - **하이라이트 칩 제거(§25)**: 최대 풍속 칩은 헤더 KPI 클러스터로 이전 — 좌패널엔 더 이상 없다.
+ * - 검색/정렬 툴바(유지, 리스트 바로 위).
  * - **단일 통합 리스트**: ① 예외 블록 — 지연·미수신만 심각도순, 행 배경에 은은한 상태 틴트로 표시
  *   (큰 카드·스파크라인 없이 한 줄), ② 카테고리 그룹(해양기상부이/파고부이/해양관측부이) — 얇은
  *   헤더(라벨+카운트) 뒤에 **정상 지점만**(중복 회피, 예외는 위 블록에만) 컴팩트 한 줄 행.
  * - 행은 34~40px 높이의 단일 라인(글리프+이름+(기관)+우측 값)으로 통일 — 전 UnifiedRow 하나가
  *   variant(exception|normal)로 두 톤을 렌더한다.
  * - 기관명: 모든 행에 "(기상청)"/"(국립해양조사원)" 병기(기존 방침 유지).
+ * - 최종 세로 순서: 부이 수신 현황(타일) → 유형 필터 → 검색+정렬 → 통합 리스트.
  */
 import { useMemo, useRef, useState, type ReactNode } from 'react'
 import { useShallow } from 'zustand/react/shallow'
@@ -64,13 +67,13 @@ export default function LeftPanel() {
   const {
     stations, live, stationsError, liveError, liveLoadedOnce, selectedStationId, requestFlyTo,
     visibleStatuses, visibleCategories,
-    toggleStatus, setAllStatuses, toggleCategory, setAllCategories, resetFilters,
+    toggleStatus, toggleCategory, setAllCategories, resetFilters,
   } = useStore(
     useShallow(s => ({
       stations: s.stations, live: s.live, stationsError: s.stationsError, liveError: s.liveError,
       liveLoadedOnce: s.liveLoadedOnce, selectedStationId: s.selectedStationId, requestFlyTo: s.requestFlyTo,
       visibleStatuses: s.visibleStatuses, visibleCategories: s.visibleCategories,
-      toggleStatus: s.toggleStatus, setAllStatuses: s.setAllStatuses,
+      toggleStatus: s.toggleStatus,
       toggleCategory: s.toggleCategory, setAllCategories: s.setAllCategories,
       resetFilters: s.resetFilters,
     }))
@@ -150,20 +153,10 @@ export default function LeftPanel() {
     return list.sort((a, b) => STATUS_RANK[a.status] - STATUS_RANK[b.status] || a.name.localeCompare(b.name, 'ko'))
   }, [buoys, search])
 
-  const maxWind = useMemo(() => {
-    let best: { name: string; value: number; id: string; source: MergedBuoy['source'] } | null = null
-    for (const b of buoys) {
-      const w = b.values.wind_speed
-      if (w == null || !isFinite(w) || w < 0 || w > 60) continue
-      if (!best || w > best.value) best = { name: b.name, value: w, id: b.id, source: b.source }
-    }
-    return best
-  }, [buoys])
-
   const loading = !liveLoadedOnce && stations.length === 0
 
   return (
-    <aside style={{ width: 'clamp(320px, 21vw, 420px)', flexShrink: 0, background: 'var(--bg-panel)',
+    <aside className="uiz" style={{ width: 'clamp(320px, 21vw, 420px)', flexShrink: 0, background: 'var(--bg-panel)',
       borderRight: '1px solid var(--line)', display: 'flex', flexDirection: 'column', overflow: 'hidden',
       boxShadow: '6px 0 24px rgba(0,0,0,0.35)', position: 'relative', zIndex: 1 }}>
 
@@ -190,39 +183,30 @@ export default function LeftPanel() {
         )}
       </div>
 
-      {/* ── 필터 섹션 — 상태·종류 체크박스(목록+지도 공용 단일 소스) ── */}
+      {/* ── 필터 섹션(§25) — "상태" 체크박스 그룹은 위 3타일과 완전 중복이라 삭제. 남은 "유형"
+          그룹 하나뿐이라 헤더는 한 줄(유형 라벨 + 전체/모두해제 + 필터초기화)로 접는다. ── */}
       <div style={{ borderBottom: '1px solid var(--line)', padding: '11px 10px', flexShrink: 0 }}>
         <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', padding: '2px 6px 6px' }}>
-          <span className="eyebrow">필터</span>
-          {filtersNarrowed && (
-            <button className="filter-link" onClick={resetFilters}>필터 초기화</button>
-          )}
+          <span className="eyebrow">유형</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+            <button className="filter-link" style={{ fontSize: 12 }} onClick={() => setAllCategories(true)}>전체</button>
+            <span style={{ color: 'var(--line)', fontSize: 12 }}>·</span>
+            <button className="filter-link" style={{ fontSize: 12 }} onClick={() => setAllCategories(false)}>모두 해제</button>
+            {filtersNarrowed && (
+              <>
+                <span style={{ color: 'var(--line)', fontSize: 12 }}>·</span>
+                <button className="filter-link" style={{ fontSize: 12 }} onClick={resetFilters}>필터 초기화</button>
+              </>
+            )}
+          </div>
         </div>
 
-        <FilterGroupHeader label="상태" onAll={() => setAllStatuses(true)} onNone={() => setAllStatuses(false)} />
-        {/* 상태 필터 행 — 카운트 숫자 미표기(§12: 바로 위 3타일과 100% 중복이라 제거) */}
-        {STATUS_ORDER.map(st => (
-          <FilterCheckRow key={st} checked={visibleStatuses.has(st)} onChange={() => toggleStatus(st)}
-            label={STATUS_LABEL[st]}
-            icon={<span style={{ width: 8, height: 8, borderRadius: '50%', background: STATUS_HEX[st], flexShrink: 0 }} />} />
-        ))}
-
-        <FilterGroupHeader label="유형" onAll={() => setAllCategories(true)} onNone={() => setAllCategories(false)} />
         {CATEGORY_ORDER.map(cat => (
           <FilterCheckRow key={cat} checked={visibleCategories.has(cat)} onChange={() => toggleCategory(cat)}
             label={CATEGORY_LABEL[cat]} count={categoryCounts[cat]}
             icon={<BuoyGlyph category={cat} fill="var(--t-mid)" size={13} />} />
         ))}
       </div>
-
-      {/* ── 하이라이트 칩 — '최대 파고'는 KpiBar 와 중복이라 제거(§12), '최대 풍속'만 유지(KPI에
-          없어 비중복). 단일 칩이라 flex:1 로 폭 전체를 늘리지 않고 자연스러운 폭으로 좌측 정렬한다. ── */}
-      {!loading && maxWind && (
-        <div style={{ display: 'flex', padding: '11px 12px', borderBottom: '1px solid var(--line)', flexShrink: 0 }}>
-          <HighlightChip label="최대 풍속" name={maxWind.name} value={maxWind.value.toFixed(1)} unit="m/s"
-            onClick={() => requestFlyTo(maxWind.id)} />
-        </div>
-      )}
 
       {/* ── Toolbar — 검색 + 정렬(한 줄로 압축, §19 밀도 확보) ── */}
       <div style={{ borderBottom: '1px solid var(--line)', borderTop: '1px solid var(--line)',
@@ -325,29 +309,6 @@ export default function LeftPanel() {
   )
 }
 
-// ── 하이라이트 칩 ────────────────────────────────────────────────────────
-function HighlightChip({ label, name, value, unit, onClick }: {
-  label: string; name: string; value: string; unit: string; onClick?: () => void
-}) {
-  const Comp = onClick ? 'button' : 'div'
-  return (
-    <Comp onClick={onClick} style={{
-      // 단일 칩(§12 — '최대 파고' 제거 후 유일 칩)이라 컨테이너 폭까지 늘어지지 않도록 자연스러운
-      // 폭으로 좌측 정렬(구 flex:1 폐기).
-      flexShrink: 0, minWidth: 168, maxWidth: 240, textAlign: 'left', cursor: onClick ? 'pointer' : 'default',
-      background: 'var(--bg-elev)', border: '1px solid var(--line)', borderRadius: 8, padding: '8px 11px',
-      font: 'inherit', transition: 'border-color 0.12s',
-    }}>
-      <div className="eyebrow" style={{ marginBottom: 3, fontSize: 13 }}>{label}</div>
-      <div className="tnum" style={{ fontSize: 17, fontWeight: 700, color: 'var(--t-hi)', display: 'flex', alignItems: 'baseline', gap: 3 }}>
-        {value}<span style={{ fontSize: 13, fontWeight: 500, color: 'var(--t-lo)' }}>{unit}</span>
-      </div>
-      <div style={{ fontSize: 13, color: 'var(--t-mid)', fontWeight: 600, marginTop: 1,
-        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</div>
-    </Comp>
-  )
-}
-
 // ── 통합 리스트 행(§19) — variant='exception'(지연·미수신, 상태 틴트 배경 + "상태·경과") 과
 // variant='normal'(카테고리 그룹 소속, 정상만 + "파고·수온·경과") 을 하나의 34~40px 단일 라인으로
 // 렌더한다. 큰 카드·스파크라인 없이 스캔하기 쉬운 밀도 있는 테이블 행.
@@ -447,7 +408,7 @@ function StatReadout({ status, count, active, onClick, divider }: {
 }
 
 /** 전체 리스트 카테고리 그룹 헤더(§18-3, 바다누리식) — 라벨 + 카운트 + 얇은 구분선.
- *  필터 섹션의 FilterGroupHeader(체크박스 그룹용)와는 별개 — 이쪽은 본문 콘텐츠 섹션 헤더다. */
+ *  필터 섹션 헤더(유형 그룹, §25 — 한 줄로 접힘)와는 별개 — 이쪽은 본문 콘텐츠 섹션 헤더다. */
 function CategoryGroupHeader({ label, count }: { label: string; count: number }) {
   return (
     <div style={{ display: 'flex', alignItems: 'baseline', gap: 7, padding: '9px 8px 5px' }}>
@@ -458,25 +419,9 @@ function CategoryGroupHeader({ label, count }: { label: string; count: number })
   )
 }
 
-/** 필터 섹션 그룹 라벨 + (선택) "전체/해제" 미니 편의 링크. */
-function FilterGroupHeader({ label, onAll, onNone }: { label: string; onAll?: () => void; onNone?: () => void }) {
-  return (
-    <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', padding: '8px 6px 3px' }}>
-      <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--t-lo)' }}>{label}</span>
-      {(onAll || onNone) && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
-          {onAll && <button className="filter-link" onClick={onAll}>전체</button>}
-          {onAll && onNone && <span style={{ color: 'var(--line)', fontSize: 13 }}>·</span>}
-          {onNone && <button className="filter-link" onClick={onNone}>모두 해제</button>}
-        </div>
-      )}
-    </div>
-  )
-}
-
-/** 실제 체크박스(native input) — 시각적으로 커스텀 스킨. 접근성·키보드 조작을 그대로 유지한다.
- *  `count` 는 선택(옵션) — 상태 필터 행은 바로 위 3타일과 중복이라 생략하고(§12), 종류 필터 행은
- *  비중복이라 계속 넘긴다. */
+/** 실제 체크박스(native input) — 시각적으로 커스텀 스킨(opacity:0 + .chk-box 대체 UI, index.css
+ *  참고). 접근성·키보드 조작을 그대로 유지한다. `count` 는 선택(옵션) — 유형 필터 행(현재 유일한
+ *  그룹, §25)은 비중복이라 항상 넘긴다. */
 function FilterCheckRow({ checked, onChange, icon, label, count }: {
   checked: boolean; onChange: () => void; icon: ReactNode; label: string; count?: number
 }) {

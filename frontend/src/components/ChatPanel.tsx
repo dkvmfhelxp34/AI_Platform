@@ -140,8 +140,10 @@ export default function ChatPanel() {
 
   return (
     <>
-      {/* ── FAB 런처 — 우하단 고정(범례와 겹치지 않는 위치, 세부 배치는 추후 조정) ── */}
+      {/* ── FAB 런처 — 우하단 고정(범례와 겹치지 않는 위치, 세부 배치는 추후 조정). §25: uiz 로
+          QHD/UHD 에서 확대(fixed 오버레이라 지도 캔버스 스케일과 무관) ── */}
       <button
+        className="uiz"
         onClick={() => setOpen(o => !o)}
         aria-label={open ? 'AI 어시스턴트 닫기' : 'AI 어시스턴트 열기'}
         aria-expanded={open}
@@ -167,9 +169,10 @@ export default function ChatPanel() {
         {open ? <CloseIcon /> : <ChatIcon />}
       </button>
 
-      {/* ── 팝업 챗 창 ── */}
+      {/* ── 팝업 챗 창 — §25: uiz(fixed 오버레이이므로 지도 캔버스와 무관하게 확대 가능) ── */}
       {open && (
         <div
+          className="uiz"
           role="dialog"
           aria-label="AI 어시스턴트"
           style={{

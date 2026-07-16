@@ -256,7 +256,7 @@ export default function DetailDrawer() {
   const goNext = () => { if (idx >= 0 && idx < orderedIds.length - 1) openDetail(orderedIds[idx + 1]); else if (orderedIds.length) openDetail(orderedIds[0]) }
 
   return (
-    <aside className="detail-drawer" style={{
+    <aside className="detail-drawer uiz" style={{
       width: 'clamp(490px, 34vw, 620px)', flexShrink: 0, background: 'var(--bg-panel)',
       borderLeft: '1px solid var(--line)', display: 'flex', flexDirection: 'column', overflow: 'hidden',
       boxShadow: '-6px 0 24px rgba(0,0,0,0.35)',
