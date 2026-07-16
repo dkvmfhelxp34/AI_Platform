@@ -169,8 +169,21 @@ def _build_kma_spec_index() -> dict:
 
 
 def _kma_stations() -> list[dict]:
-    """sea_obs(B/C) 좌표 + list-table 제원(form/영문명/센서고) 병합."""
-    obs = kma_marine.fetch_sea_obs()
+    """sea_obs(B/C) 좌표 + list-table 제원(form/영문명/센서고) 병합.
+
+    §D2 픽스: `sea_obs` 는 매 10분 슬롯의 단일 관측 스냅샷이라, 어느 한 순간의 `fetch_sea_obs()`
+    직접호출만으로 등록부를 지으면 보고주기가 느리거나 간헐적인 지점(실측: 추자도 KMA_22184 등)이
+    하필 그 슬롯엔 빠져 있어서 등록부에서 통째로 누락되는 사고가 난다(반대로 `/api/live` 는 그
+    지점을 잡고 있는 불일치 — "라이브엔 있는데 상세 제원은 텅 빔"). `live_cache`(백그라운드로
+    5분마다 갱신되는 KMA 스냅샷, 직접호출과 별개 타이밍)와 이번 직접호출을 stn_id 기준으로
+    합쳐(합집합) 어느 한쪽 호출에만 잠깐 잡힌 지점도 놓치지 않는다(직접호출 값이 있으면 그쪽을
+    최신으로 우선). 두 소스 다 sea_obs 원본과 동일 스키마라 병합에 추가 파싱이 필요 없다.
+    """
+    direct_obs = kma_marine.fetch_sea_obs()
+    cached_obs, _cached_at = live_cache.get_kma_snapshot()
+    obs_by_stn: dict[str, dict] = {o["stn_id"]: o for o in cached_obs}
+    obs_by_stn.update({o["stn_id"]: o for o in direct_obs})  # 직접호출(방금 조회)이 최신이라 우선
+    obs = list(obs_by_stn.values())
     spec_idx = _build_kma_spec_index()
 
     out: list[dict] = []

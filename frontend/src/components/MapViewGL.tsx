@@ -266,12 +266,12 @@ function Tag({ label }: { label: string }) {
 // ── Main component ──────────────────────────────────────────────────────
 export default function MapViewGL() {
   const { stations, live, liveLoadedOnce, baseLayer, setBaseLayer, selectedStationId, setSelectedStationId, flyToRequest, openDetail,
-    visibleStatuses, visibleCategories } = useStore(
+    detailOpenId, visibleStatuses, visibleCategories } = useStore(
     useShallow(s => ({
       stations: s.stations, live: s.live, liveLoadedOnce: s.liveLoadedOnce,
       baseLayer: s.baseLayer, setBaseLayer: s.setBaseLayer,
       selectedStationId: s.selectedStationId, setSelectedStationId: s.setSelectedStationId, flyToRequest: s.flyToRequest,
-      openDetail: s.openDetail,
+      openDetail: s.openDetail, detailOpenId: s.detailOpenId,
       visibleStatuses: s.visibleStatuses, visibleCategories: s.visibleCategories,
     }))
   )
@@ -310,6 +310,19 @@ export default function MapViewGL() {
     const b = buoys.find(x => x.id === popupBuoyIdRef.current)
     if (b) popupRootRef.current?.render(<BuoyPopupContent b={b} onDetail={openDetail} />)
   }, [buoys, openDetail])
+
+  // F2 — 드로어 ‹ › 내비(openDetail(다른 id))는 selectedStationId 는 갱신하지만(store.openDetail
+  // 참고) 지도 팝업은 별도 상태(popupBuoyIdRef)라 그대로 남아있었다 — 드로어는 부이 A→B 로
+  // 넘어갔는데 지도 팝업은 여전히 A 를 보여주는 "동시에 다른 부이 두 개" 상태가 발생. 열린
+  // 팝업의 부이가 지금 드로어가 보여주는 부이(detailOpenId)와 다르면 팝업을 닫아 불일치를 없앤다
+  // (카메라를 이동시키는 flyTo 는 쓰지 않음 — 드로어 내비 순서가 이름순이라 지도가 매번 먼 곳으로
+  // 튀는 게 더 산만하다).
+  useEffect(() => {
+    if (!detailOpenId) return
+    if (popupBuoyIdRef.current && popupBuoyIdRef.current !== detailOpenId && mlPopupRef.current?.isOpen()) {
+      mlPopupRef.current.remove()
+    }
+  }, [detailOpenId])
 
   // ── 지도 초기화 ──────────────────────────────────────────────────────
   useEffect(() => {

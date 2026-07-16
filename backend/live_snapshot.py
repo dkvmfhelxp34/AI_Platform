@@ -16,6 +16,7 @@ from typing import Optional
 import demo_scenario
 import kma_marine
 import live_cache
+import stations as stations_mod
 import status as status_mod
 
 
@@ -117,6 +118,36 @@ def _khoa_live_item(obs_code: str, rec: dict, now) -> dict:
     }
 
 
+def _missing_live_item(station: dict) -> dict:
+    """§D1 픽스 — 등록부(`stations.py`)에는 있지만 라이브 소스(sea_obs/twRecent burst) 어느
+    쪽에도 아직 안 잡힌 지점의 방어적 레코드.
+
+    발생 사례(실측): (1) KHOA 지점이 twRecent burst 폴링 대상에서 한 번도 성공 응답을 못 받은 경우,
+    (2) KMA sea_obs 가 매 10분 슬롯의 단일 관측 스냅샷이라, 보고주기가 느리거나 간헐적인 지점(주로
+    파고부이 C타입)이 특정 호출 타이밍엔 그 슬롯에 빠져 있는 경우. 원인이 무엇이든 등록부에 있는
+    지점은 지도·리스트·카운트에서 통째로 사라지면 안 되므로, status='미수신'·obs_time/minutes_since
+    =None·값 전부 결측인 정직한 레코드를 채워 넣는다(값을 지어내지 않음).
+    """
+    values: dict = {}
+    source = station.get("source")
+    tp = station.get("tp")
+    return {
+        "source": source,
+        "id": station.get("id"),
+        "name": station.get("name"),
+        "lon": station.get("lon"),
+        "lat": station.get("lat"),
+        "tp": tp,
+        "tp_label": station.get("tp_label"),
+        "obs_time": None,
+        "status": status_mod.Status.LOST.value,
+        "minutes_since": None,
+        "cadence_min": None,
+        "values": values,
+        "available_metrics": available_metrics(source, tp, values),
+    }
+
+
 def build_live_snapshot() -> list[dict]:
     """`live_cache.py` 백그라운드 스냅샷을 읽어 상태만 **현재시각 기준**으로 매 요청 재계산한다.
 
@@ -126,19 +157,37 @@ def build_live_snapshot() -> list[dict]:
     마지막 단계에서 `demo_scenario.apply_status_override()` 를 거친다 — 큐레이션된 소수 지점만
     상태·경과시간·표시 관측시각이 시연용으로 재연출되고(§13-2), 나머지는 그대로다. 게이트
     (`DEMO_SCENARIO`)가 꺼져 있으면 이 호출은 완전히 무해(원본 그대로 반환)하다.
+
+    §D1 픽스: 조립이 끝나면 `stations.get_stations()`(전체 등록부)와 **합집합**한다 — 등록된
+    지점인데 위 두 라이브 소스 어디에도 없으면(KHOA 미폴링·KMA sea_obs 슬롯 누락 등) `_missing_live_item()`
+    으로 "미수신" 방어 레코드를 채워 넣는다. 그래야 `/api/stations` 에는 있는데 `/api/live`(지도·
+    리스트·카운트)에선 통째로 사라지는 지점이 구조적으로 없어진다. `stations.get_stations()` 는
+    자체 1시간 캐시가 있어 매 요청마다 추가 외부호출이 생기지 않는다.
     """
     now = kma_marine.now_kst()
     out: list[dict] = []
+    seen_ids: set[str] = set()
 
     kma_obs, _kma_at = live_cache.get_kma_snapshot()
     for o in kma_obs:
         if o["tp"] not in ("B", "C"):
             continue
-        out.append(demo_scenario.apply_status_override(_kma_live_item(o, now)))
+        item = demo_scenario.apply_status_override(_kma_live_item(o, now))
+        out.append(item)
+        seen_ids.add(item["id"])
 
     khoa_obs, _khoa_at = live_cache.get_khoa_snapshot()
     for obs_code, rec in khoa_obs.items():
-        out.append(demo_scenario.apply_status_override(_khoa_live_item(obs_code, rec, now)))
+        item = demo_scenario.apply_status_override(_khoa_live_item(obs_code, rec, now))
+        out.append(item)
+        seen_ids.add(item["id"])
+
+    for station in stations_mod.get_stations():
+        sid = station.get("id")
+        if not sid or sid in seen_ids:
+            continue
+        out.append(demo_scenario.apply_status_override(_missing_live_item(station)))
+        seen_ids.add(sid)
 
     return out
 

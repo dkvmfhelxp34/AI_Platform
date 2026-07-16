@@ -263,7 +263,7 @@ export default function LeftPanel() {
               </span>
             </div>
             {exceptions.slice(0, EXCEPTION_CAP).map(b => (
-              <UnifiedRow key={b.id} b={b} variant="exception"
+              <UnifiedRow key={b.id} b={b} variant="exception" sortMode={sortMode}
                 isSel={b.id === selectedStationId} onClick={() => requestFlyTo(b.id)} />
             ))}
             {exceptions.length > EXCEPTION_CAP && (
@@ -282,7 +282,7 @@ export default function LeftPanel() {
             <div key={cat}>
               <CategoryGroupHeader label={CATEGORY_LABEL[cat]} count={list.length} />
               {list.map(b => (
-                <UnifiedRow key={b.id} b={b} variant="normal"
+                <UnifiedRow key={b.id} b={b} variant="normal" sortMode={sortMode}
                   isSel={b.id === selectedStationId} onClick={() => requestFlyTo(b.id)} />
               ))}
             </div>
@@ -333,8 +333,8 @@ function HighlightChip({ label, name, value, unit, onClick }: {
 // ── 통합 리스트 행(§19) — variant='exception'(지연·미수신, 상태 틴트 배경 + "상태·경과") 과
 // variant='normal'(카테고리 그룹 소속, 정상만 + "파고·수온·경과") 을 하나의 34~40px 단일 라인으로
 // 렌더한다. 큰 카드·스파크라인 없이 스캔하기 쉬운 밀도 있는 테이블 행.
-function UnifiedRow({ b, variant, isSel, onClick }: {
-  b: MergedBuoy; variant: 'exception' | 'normal'; isSel: boolean; onClick: () => void
+function UnifiedRow({ b, variant, sortMode, isSel, onClick }: {
+  b: MergedBuoy; variant: 'exception' | 'normal'; sortMode: SortMode; isSel: boolean; onClick: () => void
 }) {
   const color = STATUS_HEX[b.status]
   const category = categoryOf(b)
@@ -370,7 +370,11 @@ function UnifiedRow({ b, variant, isSel, onClick }: {
       ) : (
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexShrink: 0 }}>
           <CompactVal value={b.values.wave_height} unit="m" />
-          <CompactVal value={b.values.water_temp} unit="℃" />
+          {/* F1 — 정렬 기준이 '풍속'일 때는 수온 대신 풍속을 보여줘 지금 정렬 중인 값이 행에서
+              바로 보이게 한다(그 외 정렬 기준은 기존대로 파고·수온 유지). */}
+          {sortMode === 'wind'
+            ? <CompactVal value={b.values.wind_speed} unit="m/s" />
+            : <CompactVal value={b.values.water_temp} unit="℃" />}
           <span className="tnum" style={{ fontSize: 13, color: 'var(--t-lo)', fontWeight: 500, minWidth: 32, textAlign: 'right' }}>
             {compactElapsed(b.minutes_since)}
           </span>

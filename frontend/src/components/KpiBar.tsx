@@ -49,6 +49,9 @@ export default function KpiBar() {
   const alerts = status?.alerts ?? null
   const alertsColor = alerts == null ? 'var(--t-lo)' : alerts === 0 ? 'var(--ok)' : alerts <= 5 ? 'var(--delay)' : 'var(--lost)'
   const alertsDelta = prevAlerts != null && alerts != null ? alerts - prevAlerts : 0
+  // 축5 — "수신 이상" > 0 이면 눈에 띄어야 한다: 은은한 앰버/적색 소프트틴트 배경 + 좌측 강조선.
+  // 0 이면(계도적 침묵) 틴트 없이 차분하게 — 아래 KpiTile 의 accent(초록/앰버/적색)는 그대로 유지.
+  const alertsTint = alerts == null || alerts === 0 ? undefined : alerts <= 5 ? 'var(--delay-soft)' : 'var(--lost-soft)'
 
   const maxWave = status?.max_wave ?? null
   const maxWaveDelta = prevMaxWave != null && maxWave != null ? maxWave.value - prevMaxWave : 0
@@ -72,7 +75,7 @@ export default function KpiBar() {
       ) : (
         <>
           <KpiTile label="수신 이상" value={alerts == null ? '—' : String(alerts)} unit="건" accent={alertsColor}
-            delta={alertsDelta} clickable onClick={filterAlertsOnly} wide
+            delta={alertsDelta} clickable onClick={filterAlertsOnly} wide bgTint={alertsTint}
             title="지연·미수신 부이 수 — 클릭하면 이상 있는 부이만 필터링" />
           <KpiDivider />
           <KpiTile label="정상 가동률" value={uptimePct == null ? '—' : String(uptimePct)} unit="%" accent={uptimeColor}
@@ -104,27 +107,30 @@ function DeltaBadge({ delta, positiveIsBad = true }: { delta: number; positiveIs
   )
 }
 
-function KpiTile({ label, value, unit, sub, accent, delta, clickable, onClick, title, wide }: {
+function KpiTile({ label, value, unit, sub, accent, delta, clickable, onClick, title, wide, bgTint }: {
   label: string; value: string; unit?: string; sub?: string; accent?: string
-  delta?: number; clickable?: boolean; onClick?: () => void; title?: string; wide?: boolean
+  delta?: number; clickable?: boolean; onClick?: () => void; title?: string; wide?: boolean; bgTint?: string
 }) {
   const Comp = clickable ? 'button' : 'div'
+  const restBg = bgTint ?? 'none'
   return (
     <Comp
       onClick={clickable ? onClick : undefined}
       title={title}
       style={{
         display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 3,
-        padding: wide ? '10px 34px' : '8px 16px', minWidth: wide ? 180 : 108, flexShrink: 0,
+        // 축5 — 틴트가 있을 때(수신 이상 > 0) 좌측 강조선 3px 만큼 좌측 패딩을 줄여 시각적 폭을 맞춘다.
+        padding: wide ? `10px 34px 10px ${bgTint ? 31 : 34}px` : '8px 16px', minWidth: wide ? 180 : 108, flexShrink: 0,
         // 3타일만 남은 뒤 우측이 헐렁해 보이지 않도록(§12) wide 타일은 flex:1 로 바 전체 폭을
         // 3등분해 균형 있게 채운다(우측 빈 공간 제거) — 상한 없이 바 폭에 맞춰 늘어난다.
         flex: wide ? '1 1 0' : '0 0 auto',
-        background: 'none', border: 'none', borderTop: `2px solid ${accent ?? 'transparent'}`,
+        background: restBg, border: 'none', borderTop: `2px solid ${accent ?? 'transparent'}`,
+        borderLeft: bgTint ? `3px solid ${accent}` : 'none',
         cursor: clickable ? 'pointer' : 'default', textAlign: 'left', font: 'inherit',
         transition: 'background 0.12s',
       }}
       onMouseEnter={clickable ? (e => (e.currentTarget.style.background = 'var(--bg-hover)')) : undefined}
-      onMouseLeave={clickable ? (e => (e.currentTarget.style.background = 'none')) : undefined}
+      onMouseLeave={clickable ? (e => (e.currentTarget.style.background = restBg)) : undefined}
     >
       <div className="eyebrow" style={{ whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 4 }}>
         {label}

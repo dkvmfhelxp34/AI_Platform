@@ -247,7 +247,11 @@ export default function DetailDrawer() {
         <>
           <DrawerHeader buoy={buoy} onClose={closeDetail} onPrev={goPrev} onNext={goNext} />
           <div style={{ flex: 1, overflowY: 'auto', padding: '17px' }}>
-            <CurrentReadout buoy={buoy} recentTs={recentTs} />
+            {/* A5 — buoy.id 로 key 를 줘 부이 전환 시 CurrentReadout 을 완전히 새로 마운트한다
+                (업데이트가 아니라 리마운트). 빠른 연속 전환 중 이전 부이의 부분 상태가 새 부이
+                렌더에 잠깐 섞여 보이는 것을 방지하는 방어적 조치 — cells 자체는 buoy.values 에서
+                매 렌더 새로 계산되지만, 리마운트를 보장해 두는 편이 더 안전하다. */}
+            <CurrentReadout key={buoy.id} buoy={buoy} recentTs={recentTs} />
             <TimeseriesSection
               buoy={buoy} range={range} setRange={setRange}
               metric={metric} setMetric={setMetric}
@@ -470,6 +474,20 @@ function TimeseriesSection({ buoy, range, setRange, metric, setMetric, ts, loadi
 
   const threshold = METRIC_THRESHOLDS[metric]
   const step = NICE_STEP[metric]
+  // §21(2026-07-16, A1 수정) — yMin/yMax 는 아래 domain=[yMin,yMax] 로 <YAxis> 에 그대로 들어가는데,
+  // Recharts 는 allowDataOverflow(기본 false) 일 때 우리가 지정한 domain 을 "내부 계산 데이터
+  // domain"과 Math.min/Math.max 로 합집합 처리한다(parseSpecifiedDomain). 이 차트는 예측
+  // 불확실성 밴드를 스택 Area 2겹(fcLower+fcWidth, stackId="fcband")으로 그리는데, Recharts 는
+  // 스택 시리즈의 내부 domain 을 항상 0 기준선 포함으로 계산한다(getDomainOfStackGroups) — 그
+  // 결과 기압처럼 절대값이 큰(⁓1000) 비-zero-floor 지표에서 yMin 이 995 로 계산되더라도 최종
+  // 렌더 domain 이 Math.min(995, 0)=0 으로 강제로 끌려 내려가 "0~600~1100" 같은 압착된 축이
+  // 나온다(KMA 해양기상부이 기압 탭 버그의 실제 원인 — 관측/예측 값 자체는 정상이었다). 아래
+  // <YAxis allowDataOverflow> 로 우리 domain 을 그대로 신뢰하게 만드는 게 근본 수정이다.
+  //
+  // 두 번째 문제 — 패딩 공식: 기존 `rawMax*1.08`(zero-floor 전제, 파고 3m→+0.24m 정도는 적절)를
+  // 비-zero-floor 지표(기압 ⁓1000, 수온)에 그대로 쓰면 절대값 기준 8% 가 실제 변동폭(수십 배 더
+  // 작음)에 비해 지나치게 커서(예: 1015hPa*0.08≈+81hPa) 축이 다시 헐렁해진다. zero-floor 가
+  // 아닌 지표는 "실측 변동폭(range)" 기준 패딩으로 바꿔 위아래 여백을 데이터 스케일에 맞춘다.
   const { yMin, yMax } = useMemo(() => {
     const vals = chartData
       .flatMap(r => [r.obs, r.fc, r.fcLower != null && r.fcWidth != null ? r.fcLower + r.fcWidth : null])
@@ -478,8 +496,15 @@ function TimeseriesSection({ buoy, range, setRange, metric, setMetric, ts, loadi
     if (!vals.length) return { yMin: 0, yMax: step * 4 }
     const rawMax = Math.max(...vals)
     const rawMin = Math.min(...vals)
-    const max = Math.ceil((rawMax * 1.08) / step) * step
-    const min = ZERO_FLOOR[metric] ? 0 : Math.floor(rawMin / step) * step
+    if (ZERO_FLOOR[metric]) {
+      const max = Math.ceil((rawMax * 1.08) / step) * step
+      return { yMin: 0, yMax: max <= 0 ? step : max }
+    }
+    // 비-zero-floor(수온·기압) — 실측 변동폭(range) 기준 위아래 15% 여백(최소 1 step 보장)
+    const dataRange = Math.max(rawMax - rawMin, step)
+    const pad = Math.max(dataRange * 0.15, step)
+    const max = Math.ceil((rawMax + pad) / step) * step
+    const min = Math.floor((rawMin - pad) / step) * step
     return { yMin: min, yMax: max <= min ? min + step : max }
   }, [chartData, threshold, step, metric])
 
@@ -491,16 +516,20 @@ function TimeseriesSection({ buoy, range, setRange, metric, setMetric, ts, loadi
 
   // §18-1 — 관측선에 "표본임을 보여주는" 작은 점 마커를 찍되, 장기 구간(30d/1y)처럼 표본이 많으면
   // 자동으로 솎아 과밀을 막는다(항상 최대 ~60개 점만 그림 + 마지막 관측점은 항상 표시).
+  // A3 — 표본이 아주 적은 구간(예: 파고부이 일 단위 관측 24h≈3pt)은 점이 "지금" 라벨 등에 묻혀
+  // 안 보일 수 있어 반경을 눈에 띄게 키운다(관측선 자체가 짧아 점이 곧 유일한 신호이기 때문).
   const obsCount = displayPoints.length
   const dotStride = Math.max(1, Math.ceil(obsCount / 60))
+  const sparseObs = obsCount > 0 && obsCount <= 8
+  const obsDotRadius = sparseObs ? 4 : 1.8
   const renderObsDot = useMemo(() => (
     (dotProps: { cx?: number; cy?: number; index?: number; payload?: ChartRow }) => {
       const { cx, cy, index = 0, payload } = dotProps
       if (payload?.obs == null) return <g key={`d-${index}`} />
       if (index % dotStride !== 0 && index !== obsCount - 1) return <g key={`d-${index}`} />
-      return <circle key={`d-${index}`} cx={cx} cy={cy} r={1.8} fill={ACCENT_HEX} stroke={PLOT_BG_HEX} strokeWidth={1} />
+      return <circle key={`d-${index}`} cx={cx} cy={cy} r={obsDotRadius} fill={ACCENT_HEX} stroke={PLOT_BG_HEX} strokeWidth={sparseObs ? 1.5 : 1} />
     }
-  ), [dotStride, obsCount])
+  ), [dotStride, obsCount, obsDotRadius, sparseObs])
 
   // §14 — 이 지점이 실제 제공하는 지표만 탭으로 노출(순서는 METRICS 고정 순서 유지).
   // available_metrics 가 아직 없으면(방어적 케이스) 전체 4종으로 폴백.
@@ -545,7 +574,15 @@ function TimeseriesSection({ buoy, range, setRange, metric, setMetric, ts, loadi
         ) : error ? (
           <EmptyState title="이력 없음" sub={error} />
         ) : points.length === 0 ? (
-          <EmptyState title="이력 없음" sub="이 지점은 이력이 제공되지 않습니다" />
+          // A3 — 구간 자체는 유효하나(에러 아님) 그 구간에 수신된 관측이 0건인 경우(예: 미수신
+          // 데모 부이 24h). "이력이 제공되지 않습니다"(영구적 불가처럼 읽힘) 대신 "이 구간에
+          // 수신분이 없다"는 임시적 사실로 명확히 구분하고, 미수신 상태면 그 이유를 덧붙인다.
+          <EmptyState
+            title={`최근 ${RANGES.find(r => r.key === range)?.label ?? range} 수신된 관측이 없습니다`}
+            sub={buoy.status !== '정상'
+              ? `${STATUS_LABEL[buoy.status]} 상태 · ${relativeFromMinutes(buoy.minutes_since)}`
+              : '다른 구간을 선택해 보세요'}
+          />
         ) : (
           <>
             {/* 차트 제목 + 범례(색칩)(§18-1) — "지점명 · 지표(단위)" 제목 + 우상단 색칩 범례(관측/
@@ -572,7 +609,7 @@ function TimeseriesSection({ buoy, range, setRange, metric, setMetric, ts, loadi
               borderRadius: 5, padding: '2px 7px', pointerEvents: 'none',
             }}>{metricCfg.unit}</div>
             <ResponsiveContainer width="100%" height={264}>
-              <ComposedChart data={chartData} margin={{ top: 6, right: 10, left: 2, bottom: 2 }}>
+              <ComposedChart data={chartData} margin={{ top: 22, right: 10, left: 2, bottom: 2 }}>
                 <defs>
                   <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
                     <stop offset="0%" stopColor={ACCENT_HEX} stopOpacity={0.32} />
@@ -581,12 +618,21 @@ function TimeseriesSection({ buoy, range, setRange, metric, setMetric, ts, loadi
                 </defs>
                 {/* 그리드 = 수평(뚜렷) + 세로(옅게, 시간/일 경계 느낌) — §18-1 "진짜 계기 플롯" 체크리스트 */}
                 <CartesianGrid horizontal={{ stroke: GRID_HEX }} vertical={{ stroke: GRID_HEX, strokeOpacity: 0.5 }} strokeDasharray="0" />
+                {/* A4 — "preserveStartEnd": 항상 첫/마지막 데이터 시각을 눈금으로 남겨(그 사이는
+                    minTickGap 여백에 맞춰 자동 솎음) 1년 등 장기 구간에서도 마지막 눈금이 실제
+                    마지막 관측시각(오늘)과 어긋나지 않게 한다(기존 숫자 interval 근사치는 마지막
+                    눈금이 실제 마지막 데이터 인덱스와 맞지 않을 수 있었다). */}
                 <XAxis dataKey="t" tick={<XAxisTwoLineTick />} height={34}
                   axisLine={{ stroke: LINE_HEX }} tickLine={false}
-                  interval={Math.max(0, Math.floor(chartData.length / 6) - 1)} minTickGap={34} />
+                  interval="preserveStartEnd" minTickGap={34} />
+                {/* A1 — allowDataOverflow: 예측 밴드용 스택 Area(fcLower+fcWidth)가 있으면 Recharts
+                    가 내부적으로 0 기준선 포함 domain 을 계산해(getDomainOfStackGroups) 우리가
+                    지정한 domain 을 Math.min/Math.max 로 합집합(parseSpecifiedDomain) 해버려 축이
+                    0 까지 눌린다 — allowDataOverflow 로 우리 domain([yMin,yMax], 이미 실측 범위를
+                    포함하도록 계산됨)을 그대로 신뢰하게 한다. */}
                 <YAxis tick={{ fontSize: 13, fill: AXIS_HEX, fontFamily: 'var(--font-ui)' }}
                   axisLine={false} tickLine={false} width={38} domain={[yMin, yMax]}
-                  allowDecimals={step < 1} tickCount={5} />
+                  allowDecimals={step < 1} tickCount={5} allowDataOverflow />
                 <Tooltip content={<ChartTooltip unit={metricCfg.unit} metricLabel={metricCfg.label} decimals={DECIMALS[metric]} />}
                   cursor={{ stroke: CROSSHAIR_HEX, strokeWidth: 1, strokeDasharray: '3 3' }} />
 
@@ -602,13 +648,15 @@ function TimeseriesSection({ buoy, range, setRange, metric, setMetric, ts, loadi
                   </>
                 )}
 
-                {/* 예측 구간 음영 + "지금" 경계선 */}
+                {/* 예측 구간 음영 + 관측/예측 경계선. nowT = 마지막 관측시각이라 정상 부이는 ≈현재이므로
+                    "지금"이지만, 지연·미수신 부이는 그 시각이 실제로는 몇 시간 전 최종 수신 시점이므로
+                    "최종 수신"으로 라벨을 바꿔 배지(미수신·N시간 전)와 모순되지 않게 한다. */}
                 {forecastActive && nowT && forecastEndT && (
                   <ReferenceArea x1={nowT} x2={forecastEndT} fill={FORECAST_HEX} fillOpacity={0.10} strokeOpacity={0} ifOverflow="extendDomain" />
                 )}
                 {forecastActive && nowT && (
                   <ReferenceLine x={nowT} stroke={TLO_HEX} strokeDasharray="2 2" strokeWidth={1.3}
-                    label={{ value: '지금', position: 'insideBottomLeft', fill: 'var(--t-hi)', fontSize: 13, fontWeight: 700 }} />
+                    label={{ value: buoy.status === '정상' ? '지금' : '최종 수신', position: 'insideBottomLeft', fill: 'var(--t-hi)', fontSize: 13, fontWeight: 700 }} />
                 )}
 
                 {/* 관측 — 부드러운 그라디언트 Area + 표본점 마커(§18-1, 많으면 자동 솎임 — renderObsDot) */}

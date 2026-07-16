@@ -45,6 +45,14 @@ _RANGE_PRESETS_DAYS = {"24h": 1.0, "7d": 7.0, "30d": 30.0, "1y": 365.0}
 _KMA_BUOY2_MAX_DAYS = 354.0   # kma_buoy2.php 단일요청 상한(실측) — 넘으면 분할호출
 _KHOA_HIST_CAP_DAYS = 30.0    # oceangrid day-loop(1일당 1회 호출 다항목) 응답성 확보용 상한
 
+# §A3 픽스 — getDailyWaveBuoy(파고부이 C타입 이력 대체경로) 발간지연 대응 lookback 반경.
+# 실측(2026-07-16, KMA_22457 제주항): 최근 발간월이 2025-12 이고 그 이후(2026-01~07, 7개월)는
+# 전부 미발간(resultCode!=00) — 모듈독스트링에 적힌 "발간지연 ~1.5개월" 가정보다 실제 지연이 훨씬
+# 길게 나타나는 지점이 있다. 그 결과 range=7d/30d 처럼 "지금" 기준 근접 창을 그대로 쓰면(tm1~tm2
+# 가 전부 미발간 구간에 들어가) 이력이 0건이 되고, `_merge_latest_kma_point` 가 더하는 실시간
+# sea_obs 값 1건만 남아 "7일/30일 조회인데 포인트 1개"가 된다.
+_KMA_DAILY_FALLBACK_LOOKBACK_DAYS = 365.0  # range=1y 프리셋과 동일 반경 재사용(이미 검증된 조회량)
+
 _METRIC_UNITS = {
     "wave": "m", "wave_period": "s", "wind_speed": "m/s", "wind_dir": "deg",
     "water_temp": "℃", "air_temp": "℃", "pressure": "hPa",
@@ -242,6 +250,43 @@ def _daily_wave_buoy_span_points(stn_id: str, start_date, end_date) -> list[dict
     return points
 
 
+def _daily_wave_buoy_recent_points(
+    stn_id: str, days_float: float, tm1_dt: datetime, tm2_dt: datetime,
+) -> list[dict]:
+    """§A3 픽스 — 파고부이(C) 일별 이력을, 요청 창(`tm1_dt`~`tm2_dt`, 벽시계 "지금" 기준)이
+    발간지연으로 텅 비면 "지금"이 아니라 **실제 가장 최근 발간된 데이터** 기준으로 재윈도잉해
+    재조회한다.
+
+    range=24h/7d/30d 는 전부 `tm2_dt`(≈지금) 를 창 끝으로 잡는데, getDailyWaveBuoy 는 발간지연이
+    있어(위 `_KMA_DAILY_FALLBACK_LOOKBACK_DAYS` 정의부 실측 참고) 이 창이 통째로 미발간 구간에
+    들어가면 0건이 된다. 이 경우 1y 프리셋과 같은 반경(`_KMA_DAILY_FALLBACK_LOOKBACK_DAYS`)으로
+    한 번 더 조회해(1y 조회로 이미 검증된 반경 — 실측상 최근 발간월까지는 반드시 잡힌다) 그 안에서
+    "가장 최근 발간 시각"을 새 기준점 삼아 `days_float`(7일/30일) 만큼 되짚어 슬라이스한다.
+
+    range=24h(하루) 처럼 원래도 daily 해상도 소스에서 표본이 1개 안팎인 경우는 이 폴백을 거쳐도
+    여전히 1~2개일 수 있다 — 그 자체는 정상(요청 사양에서도 허용). 폴백을 거쳐도 발간분이 아예
+    없으면(관측 시작월 이전 등) 빈 리스트를 그대로 반환한다(지어낸 값 없음)."""
+    points = _daily_wave_buoy_span_points(stn_id, tm1_dt.date(), tm2_dt.date())
+    if points or days_float >= _KMA_DAILY_FALLBACK_LOOKBACK_DAYS:
+        return points
+
+    broad_start = (tm2_dt - timedelta(days=_KMA_DAILY_FALLBACK_LOOKBACK_DAYS)).date()
+    broad_points = _daily_wave_buoy_span_points(stn_id, broad_start, tm2_dt.date())
+    if not broad_points:
+        return broad_points  # 폴백 반경 안에도 발간분 전혀 없음 — 정직하게 빈 리스트
+
+    latest_dt = _parse_ts(broad_points[-1]["t"])
+    if latest_dt is None:
+        return broad_points
+    window_start = latest_dt - timedelta(days=days_float)
+    out: list[dict] = []
+    for p in broad_points:
+        pt = _parse_ts(p.get("t"))
+        if pt is not None and pt >= window_start:
+            out.append(p)
+    return out
+
+
 def _merge_latest_kma_point(points: list[dict], stn_id: str) -> None:
     """sea_obs 최신 스냅샷을 마지막 포인트로 병합해 시계열이 "지금"까지 이어지게 한다."""
     try:
@@ -303,10 +348,12 @@ def _kma_timeseries(stn_id: str, days_float: float, label: str) -> dict:
             })
     else:
         # kma_buoy2.php 는 파고부이(C타입) 미지원(0건 응답) → getDailyWaveBuoy 일별 이력으로 대체.
-        # 짧은 범위(24h/7d)에서는 그 개월의 일별행 몇 개만 잡히거나 아예 없을 수 있음(예상된 sparsity —
-        # 아래 _merge_latest_kma_point 가 최신 sea_obs 값을 더해 최소 1개는 보장).
+        # §A3: 요청 창(tm1~tm2, "지금" 기준)이 발간지연으로 텅 비면 실제 최근 발간분 기준으로
+        # 재윈도잉하는 폴백을 거친다(_daily_wave_buoy_recent_points 독스트링 참고). 그래도 없으면
+        # (관측 시작월 이전 등) 빈 리스트 — 아래 _merge_latest_kma_point 가 최신 sea_obs 값을 더해
+        # 최소 1개는 보장한다.
         resolution = "daily"
-        points = _daily_wave_buoy_span_points(stn_id, tm1_dt.date(), tm2_dt.date())
+        points = _daily_wave_buoy_recent_points(stn_id, days_float, tm1_dt, tm2_dt)
 
     _merge_latest_kma_point(points, stn_id)
 
@@ -451,6 +498,23 @@ def get_timeseries(
     # 게이트 꺼짐/대상 아님이면 무해(원본 그대로). result["id"] 는 소스별 정규화된 station id
     # (KMA_xxx 또는 KHOA obsCode 그대로)라 demo_scenario 의 큐레이션 표 키와 그대로 맞는다.
     result["points"] = demo_scenario.inject_qc_spikes(result["points"], metric, result["id"])
+
+    # §A2 픽스 — 상태 override(지연/미수신) 대상 지점은 시계열도 합성 경과시간만큼 끝을 잘라
+    # "지금까지 이어지는 선" ↔ "미수신 배지" 모순을 없앤다(demo_scenario.apply_timeseries_override
+    # 독스트링 참고). inject_qc_spikes(스파이크 큐레이션)와 이 override(상태 큐레이션)는 서로 다른
+    # 지점 집합이라 겹치지 않는다.
+    result["points"] = demo_scenario.apply_timeseries_override(result["points"], result["id"])
+
+    # 위 두 단계(스파이크 주입·시계열 절단)로 points 가 바뀌었을 수 있으므로, 그 전에 원본
+    # records 기준으로 미리 집계돼 있던 관측기관 QC 카운트(qc_summary.flagged_count/checked)를
+    # 최종 points 기준으로 다시 세어 stale 값이 남지 않게 한다(요청사항: "잘려나간 포인트가
+    # stats/qc_summary 에 남지 않게").
+    result["qc_summary"]["flagged_count"] = sum(
+        1 for p in result["points"] if p.get("qc", {}).get("flagged")
+    )
+    result["qc_summary"]["checked"] = any(
+        p.get("qc", {}).get("checked") for p in result["points"]
+    )
 
     _apply_ai_qc(result, metric=metric)
     result["stats"] = _compute_stats(result["points"])

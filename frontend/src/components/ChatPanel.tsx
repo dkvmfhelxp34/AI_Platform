@@ -147,7 +147,10 @@ export default function ChatPanel() {
         aria-expanded={open}
         title={open ? '닫기' : 'AI 어시스턴트'}
         style={{
-          position: 'fixed', right: 22, bottom: 22, zIndex: 1000,
+          // F3 — 지도 부이 팝업(.buoy-ml-popup, index.css)이 z-index:1000 이라 챗 FAB/패널이 그
+          // 아래(999/1000)에 있으면 열린 팝업에 챗 위젯이 가려진다. 챗은 항상 최상단 플로팅
+          // 위젯이어야 하므로 팝업보다 위(1101/1100)로 올린다.
+          position: 'fixed', right: 22, bottom: 22, zIndex: 1101,
           width: 54, height: 54, borderRadius: '50%', cursor: 'pointer',
           // §20 — FAB 는 float 엘리베이션(닫힘=중립 float 표면, 열림=primary accent — 핵심 인터랙션
           // 소량 사용은 유지). 상단 하이라이트로 표고를 보강.
@@ -170,7 +173,8 @@ export default function ChatPanel() {
           role="dialog"
           aria-label="AI 어시스턴트"
           style={{
-            position: 'fixed', right: 22, bottom: 86, zIndex: 999,
+            // F3 — 지도 팝업(z-index:1000)보다 위(1100)로 — 챗 답변이 팝업에 가려지지 않게.
+            position: 'fixed', right: 22, bottom: 86, zIndex: 1100,
             width: 'clamp(320px, 26vw, 400px)', height: 'clamp(440px, 64vh, 610px)',
             // §20 — 플로팅 위젯이므로 팝업·FAB 와 동일한 최고 엘리베이션(--bg-float) + 상단 하이라이트.
             background: 'var(--bg-float)', border: '1px solid var(--line)', borderRadius: 14,

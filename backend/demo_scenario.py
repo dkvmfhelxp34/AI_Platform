@@ -109,6 +109,32 @@ DEMO_QC_SPIKES: dict[str, dict] = {
 _MIN_POINTS_FOR_INJECTION = 8
 
 
+def apply_timeseries_override(points: list[dict], station_id: str) -> list[dict]:
+    """§A2 픽스 — `apply_status_override` 로 지연/미수신 처리되는 지점의 시계열도 같은 결정(상태·
+    합성 경과시간)에 맞춰 잘라낸다. 대상 지점이 아니거나 게이트가 꺼져 있으면 그대로 반환한다.
+
+    왜 필요한가: override 대상 지점은 라이브 배지가 "미수신 · 7시간 전" 처럼 보이는데, 이 지점의
+    `/api/timeseries` 를 손대지 않으면 실측 그대로 "지금"까지 이어지는 선이 그려져 배지와 정면으로
+    모순된다(§13-2 요구사항 — "관측시각은 방금인데 미수신" 류 불일치를 상세 패널에서도 반드시
+    피해야 한다). 여기서는 관측시각이 `now - age_min`(= `apply_status_override` 가 쓴 것과 동일한
+    합성 경과시간) 이후인 포인트를 전부 잘라내 실제 배지가 말하는 "마지막 수신 후 끊김"을 차트에도
+    그대로 반영한다 — 값 자체는 바꾸지 않고 끝부분만 제거한다(원본 불변, 새 리스트 반환).
+
+    `now` 기준: `apply_status_override` 와 동일하게 `kma_marine.now_kst()`(요청마다 재계산돼도
+    "경과시간 자체는 고정"이라는 결정론이 깨지지 않는다 — 모듈 독스트링 "결정론" 항목 참고).
+    """
+    if not is_enabled():
+        return points
+    override = DEMO_STATUS_OVERRIDE.get(station_id)
+    if override is None:
+        return points
+
+    _status_label, age_min = override
+    now = kma_marine.now_kst()
+    cutoff = (now - timedelta(minutes=age_min)).strftime("%Y-%m-%d %H:%M")
+    return [p for p in points if p.get("t") and p["t"] <= cutoff]
+
+
 def inject_qc_spikes(points: list[dict], metric: str, station_id: str) -> list[dict]:
     """큐레이션된 지점·metric 조합에 한해 `points`(timeseries.py 포인트 리스트)에 스파이크
     (+선택적 결측 구간)를 주입한다. 대상이 아니면(지점 불일치·metric 불일치·게이트 꺼짐·표본
