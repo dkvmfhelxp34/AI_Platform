@@ -238,8 +238,12 @@ def _khoa_stations() -> list[dict]:
          일시적 API 공백 때문에 "무데이터"로 오판해 등록부에서 지워버리는 사고가 난다. 두 신호 모두
          무데이터일 때만 제외해 이런 오판을 피한다(그래도 실제 무데이터 항법보조/폐국 지점은 여전히
          걸러짐 — 예: YS_0002/YS_0003 은 이름으로 이미 제외, YS_0007 은 두 신호 다 없어 제외).
-    서버 기동 직후(첫 KHOA burst 완료 전, `khoa_at is None`)에는 a)를 건너뛰어(전부 포함) 부팅 경합으로
-    등록부가 빈 채로 굳어버리는 것을 방지한다 — 다음 캐시 갱신(get_stations TTL 1시간) 때 다시 걸러진다.
+    서버 기동 직후(첫 KHOA burst 완료 전, `khoa_at is None`)에는 a)(twRecent 스냅샷)를 통째로 불신하되,
+    b)(oceangrid pointDetail 관측개시일)는 twRecent burst 와 무관하게 이 함수 호출마다 동기 조회되므로
+    부팅 시에도 그대로 신뢰해 단독 신호로 제외 판정에 쓴다 — 그래야 YS_0007(관측개시일 없음)처럼
+    실제 무데이터인 지점이 부팅 후 최대 ~1시간(다음 캐시 갱신 전까지) 등록부·`/api/live`에 유령으로
+    끼어드는 사고를 막는다. 다만 pointDetail 자체가 통째로 실패해(메타 0건) 판정 불가능해지면
+    안전하게 전부 포함한다(빈 등록부 방지) — 다음 캐시 갱신 때 a)+b) 정상 판정으로 다시 걸러진다.
     """
     buoys = khoa_api.fetch_buoy_list()
     khoa_snap, khoa_at = live_cache.get_khoa_snapshot()
@@ -254,13 +258,22 @@ def _khoa_stations() -> list[dict]:
             for fut in concurrent.futures.as_completed(futs):
                 details[futs[fut]] = fut.result()
 
+    boot_grace = khoa_at is None
+    meta_available = any((details.get(b["id"]) or {}).get("obs_start_date") for b in named_candidates)
+
     candidates: list[dict] = []
     for b in named_candidates:
         obs_code = b["id"]
-        has_live = khoa_at is None or obs_code in khoa_snap
+        has_live = obs_code in khoa_snap  # 실제 스냅샷 기준(부트 시엔 대체로 false)
         has_obs_start = bool((details.get(obs_code) or {}).get("obs_start_date"))
-        if not has_live and not has_obs_start:
-            continue  # 두 신호 모두 무데이터 — 실제 무데이터/폐국 지점
+        if boot_grace:
+            # burst 전이라 has_live 를 불신 — obs_start 단독 신호로 판정한다. 단 pointDetail 이
+            # 통째로 실패(메타 0건)했으면 판정 불가이므로 전부 포함(빈 등록부 방지).
+            if meta_available and not has_obs_start:
+                continue
+        else:
+            if not has_live and not has_obs_start:
+                continue  # 두 신호 모두 무데이터 — 실제 무데이터/폐국 지점
         candidates.append(b)
 
     out: list[dict] = []

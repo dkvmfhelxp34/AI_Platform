@@ -648,15 +648,17 @@ function TimeseriesSection({ buoy, range, setRange, metric, setMetric, ts, loadi
                   </>
                 )}
 
-                {/* 예측 구간 음영 + 관측/예측 경계선. nowT = 마지막 관측시각이라 정상 부이는 ≈현재이므로
-                    "지금"이지만, 지연·미수신 부이는 그 시각이 실제로는 몇 시간 전 최종 수신 시점이므로
-                    "최종 수신"으로 라벨을 바꿔 배지(미수신·N시간 전)와 모순되지 않게 한다. */}
+                {/* 예측 구간 음영 + 관측/예측 경계선. nowT = 마지막 관측시각이라 정상 부이는 ≈현재라
+                    별도 라벨 없이 예측 음영("예측(모의 24h)" 범례)만으로 경계를 알린다("지금" 문구는
+                    싸구려로 보인다는 사용자 피드백으로 제거). 지연·미수신 부이는 그 시각이 실제로는
+                    몇 시간 전 최종 수신 시점이므로 "최종 수신"으로 라벨을 남겨 배지(미수신·N시간 전)와
+                    모순되지 않게 한다. */}
                 {forecastActive && nowT && forecastEndT && (
                   <ReferenceArea x1={nowT} x2={forecastEndT} fill={FORECAST_HEX} fillOpacity={0.10} strokeOpacity={0} ifOverflow="extendDomain" />
                 )}
                 {forecastActive && nowT && (
                   <ReferenceLine x={nowT} stroke={TLO_HEX} strokeDasharray="2 2" strokeWidth={1.3}
-                    label={{ value: buoy.status === '정상' ? '지금' : '최종 수신', position: 'insideBottomLeft', fill: 'var(--t-hi)', fontSize: 13, fontWeight: 700 }} />
+                    label={{ value: buoy.status === '정상' ? '' : '최종 수신', position: 'insideBottomLeft', fill: 'var(--t-hi)', fontSize: 13, fontWeight: 700 }} />
                 )}
 
                 {/* 관측 — 부드러운 그라디언트 Area + 표본점 마커(§18-1, 많으면 자동 솎임 — renderObsDot) */}

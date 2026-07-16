@@ -9,8 +9,10 @@
  *   (헤더 신선도 배지와 중복) 타일 제거 — **수신 이상 / 정상 가동률 / 최대 파고** 3개만 유지.
  * - 결측은 항상 "—"(0 이나 지어낸 수치 금지) — benchmark 신뢰도 원칙.
  * - 타일은 한 줄 밴드로 컴팩트하게 유지하되, QHD(2560x1440) 100% 배율에서도 편히 읽히도록
- *   라벨/서브라인 ≥13px · 숫자 값은 크고 굵게(22px) 유지한다(가독성 우선). 3개 타일이 `flex:1`로
+ *   라벨/서브라인 ≥13px · 숫자 값은 크고 굵게(26px) 유지한다(가독성 우선). 3개 타일이 `flex:1`로
  *   바 전체 폭에 고르게 분산되어(§12) 우측에 빈 공간이 남지 않게 한다.
+ * - 2026-07-16: 바 자체가 너무 두꺼워 보인다는 사용자 피드백 — 타일 세로 패딩을 ~40% 줄이고
+ *   라벨→값 간격을 좁혀 밴드 두께를 눈에 띄게 슬림화(값·라벨 크기/내용은 그대로, 세로 여백만 축소).
  * - "판정기준: 부이별 관측주기 이내 수신" 상시 문구는 제거하고 정상가동률 타일의 `title` 툴팁으로
  *   이동(§12) — 임계값이 고정 2h(§13-1)로 바뀌어 문구도 그에 맞게 갱신했다.
  */
@@ -118,9 +120,10 @@ function KpiTile({ label, value, unit, sub, accent, delta, clickable, onClick, t
       onClick={clickable ? onClick : undefined}
       title={title}
       style={{
-        display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 3,
+        display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 1,
         // 축5 — 틴트가 있을 때(수신 이상 > 0) 좌측 강조선 3px 만큼 좌측 패딩을 줄여 시각적 폭을 맞춘다.
-        padding: wide ? `10px 34px 10px ${bgTint ? 31 : 34}px` : '8px 16px', minWidth: wide ? 180 : 108, flexShrink: 0,
+        // 2026-07-16: 세로 패딩 10px→6px(~40%↓)로 밴드를 슬림화(값/라벨 크기·내용은 그대로 유지).
+        padding: wide ? `6px 34px 6px ${bgTint ? 31 : 34}px` : '5px 16px', minWidth: wide ? 180 : 108, flexShrink: 0,
         // 3타일만 남은 뒤 우측이 헐렁해 보이지 않도록(§12) wide 타일은 flex:1 로 바 전체 폭을
         // 3등분해 균형 있게 채운다(우측 빈 공간 제거) — 상한 없이 바 폭에 맞춰 늘어난다.
         flex: wide ? '1 1 0' : '0 0 auto',
@@ -137,7 +140,7 @@ function KpiTile({ label, value, unit, sub, accent, delta, clickable, onClick, t
         {clickable && <span style={{ color: 'var(--accent-h)', fontWeight: 700 }}>›</span>}
       </div>
       <div className="tnum" style={{
-        fontSize: wide ? 24 : 22, fontWeight: 700, lineHeight: 1.15, letterSpacing: '-0.01em',
+        fontSize: wide ? 26 : 22, fontWeight: 700, lineHeight: 1.1, letterSpacing: '-0.01em',
         color: accent ?? 'var(--t-hi)', whiteSpace: 'nowrap',
         display: 'flex', alignItems: 'baseline',
       }}>
