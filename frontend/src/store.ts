@@ -22,6 +22,10 @@ interface Store {
 
   selectedStationId: string | null
   baseLayer: BaseLayer
+  // §26 — 2D 필드 오버레이(바람장·수온장) 독립 on/off. 기본값 둘 다 꺼짐(첫인상은 깨끗한 지도 —
+  // 사용자 명시 요구). baseLayer 와 달리 서로 배타적이지 않다(둘 다 켤 수 있음).
+  showWind: boolean
+  showSst: boolean
   // LeftPanel 클릭 → 지도 이동 요청(마커 id). 지도가 처리 후 null로 되돌리지 않음(재클릭 시 재요청 위해 seq 사용).
   flyToRequest: { id: string; seq: number } | null
 
@@ -40,6 +44,8 @@ interface Store {
   setLive: (l: LiveItem[]) => void
   setSelectedStationId: (id: string | null) => void
   setBaseLayer: (v: BaseLayer) => void
+  toggleWind: () => void
+  toggleSst: () => void
   requestFlyTo: (id: string) => void
   openDetail: (id: string) => void
   closeDetail: () => void
@@ -71,6 +77,8 @@ export const useStore = create<Store>((set, get) => ({
 
   selectedStationId: null,
   baseLayer: 'sat',
+  showWind: false,
+  showSst: false,
   flyToRequest: null,
   detailOpenId: null,
   visibleStatuses: new Set(ALL_STATUSES),
@@ -84,6 +92,8 @@ export const useStore = create<Store>((set, get) => ({
   }),
   setSelectedStationId: (selectedStationId) => set({ selectedStationId }),
   setBaseLayer: (baseLayer) => set({ baseLayer }),
+  toggleWind: () => set((s) => ({ showWind: !s.showWind })),
+  toggleSst: () => set((s) => ({ showSst: !s.showSst })),
   requestFlyTo: (id) => set({ flyToRequest: { id, seq: ++flySeq }, selectedStationId: id }),
   openDetail: (id) => set({ detailOpenId: id, selectedStationId: id }),
   closeDetail: () => set({ detailOpenId: null }),

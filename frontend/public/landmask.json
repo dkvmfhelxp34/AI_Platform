@@ -1,0 +1,23 @@
+{
+  "bounds": [
+    115.0,
+    24.0,
+    142.0,
+    46.0
+  ],
+  "width": 4829,
+  "height": 3935,
+  "rowDir": "north-first",
+  "resolutionDeg": {
+    "lon": 0.005592,
+    "lat": 0.005592
+  },
+  "resolutionMeters": {
+    "lon": 510.0,
+    "lat": 622.5
+  },
+  "supersample": 4,
+  "source": "GSHHG 2.3.7 GSHHS_f_L1 (full resolution land polygons, https://www.soest.hawaii.edu/pwessel/gshhg/gshhg-shp-2.3.7.zip)",
+  "valueUnit": "land coverage 0-255 (0=open sea, 255=fully land, antialiased via box-downsample)",
+  "generatedAt": "2026-07-18T06:24:32.889094+00:00"
+}

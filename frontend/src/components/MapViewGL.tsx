@@ -44,6 +44,14 @@
  *             폭이 §25 브레이크포인트(3300px, UHD 만 — QHD 는 밀도 유지를 위해 배율 없이 1 그대로)를
  *             넘나들 때 마커를 새 배율로 다시 그려야 하므로 debounce 된 resize 리스너가 zoomGen 을
  *             올려 마커 생성 이펙트를 강제 재실행시킨다.
+ * - Field:    §26 — 2D 필드 오버레이(바람장 GPU 파티클 WindGL·수온장 래스터 SstGL, `webgl/`).
+ *             둘 다 `map.getCanvasContainer()` 의 평범한 DOM 캔버스 자식(마커와 동일 부모) —
+ *             명시적 z-index(수온장 4 < 바람장 6 < 마커 20+)로 "마커가 항상 필드 위" 를 보장한다
+ *             (형제 요소끼리의 z-index 비교라 canvasContainer/맵 컨테이너가 별도 스태킹 컨텍스트를
+ *             만드는지 여부와 무관하게 성립 — 실측 확인 완료). setStyle() 로 베이스맵을 바꿔도 이
+ *             캔버스들은 style 이 아니라 Map 소유 DOM 이라 지워지지 않지만, 만일을 대비해
+ *             'styledata' 이벤트마다 reattach() 로 부모를 재확인한다(멱등). `/api/field` 는 현재
+ *             1프레임만 서빙하므로(타임라인 없음) 5분 간격으로만 재폴링한다.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
@@ -54,12 +62,17 @@ import { useStore } from '../store'
 import { liveBuoys, relativeFromMinutes, type MergedBuoy } from '../utils/buoys'
 import {
   STATUS_BORDER, STATUS_HEX, STATUS_LABEL, STATUS_SOFT, SOURCE_LABEL,
-  type BaseLayer, type BuoyStatus,
+  type BaseLayer, type BuoyStatus, type FieldResponse, type FieldWind, type FieldSst,
+  type FieldWireHeader,
 } from '../types'
 import { waveLevel, THRESHOLD_HEX } from '../utils/thresholds'
 import { buoyGlyphSvg, categoryOf, CATEGORY_LABEL, CATEGORY_ORDER } from '../utils/buoyCategory'
 import BuoyGlyph from './BuoyGlyph'
 import WaveSparkline from './WaveSparkline'
+import { detectCaps } from '../webgl/glUtils'
+import { WindGL } from '../webgl/windGL'
+import { SstGL } from '../webgl/sstGL'
+import { windColor, sstColor, WIND_SPEED_MAX, SST_MIN, SST_MAX } from '../webgl/colorRamps'
 
 // ── 지도 상수 ──────────────────────────────────────────────────────────────
 const CENTER: [number, number] = [128, 36]
@@ -81,10 +94,80 @@ const SAT_STYLE: maplibregl.StyleSpecification = {
   layers: [{ id: 'esri-imagery', type: 'raster', source: 'esri', minzoom: 0, maxzoom: 19 }],
 }
 const LIGHT_STYLE_URL = 'https://basemaps.cartocdn.com/gl/positron-nolabels-gl-style/style.json'
+// §26 후속지시 #3(2026-07-16) — 다크 베이스 신규 추가. 무토큰 Carto dark-matter-nolabels,
+// positron-nolabels 와 같은 계통(라벨 없는 벡터)이라 정합됨. 실사용 로드 확인 완료.
+const DARK_STYLE_URL = 'https://basemaps.cartocdn.com/gl/dark-matter-nolabels-gl-style/style.json'
 
 const ATTRIBUTION = {
   sat: 'Esri, Maxar, Earthstar Geographics',
   light: '© CARTO © OpenStreetMap contributors',
+  dark: '© CARTO © OpenStreetMap contributors',
+}
+
+function styleForBase(bl: BaseLayer): maplibregl.StyleSpecification | string {
+  if (bl === 'light') return LIGHT_STYLE_URL
+  if (bl === 'dark') return DARK_STYLE_URL
+  return SAT_STYLE
+}
+
+// §26 — 2D 필드 오버레이. GPU 지원 여부는 세션 내내 바뀌지 않으므로 모듈 스코프에서 1회만 탐지
+// (컴포넌트 리마운트마다 다시 detectCaps() 하지 않는다 — Storm WindOverlayML 과 동일 패턴).
+const GL_CAPS = detectCaps()
+const USE_GL = GL_CAPS.tier !== 'none'
+// `/api/field` 는 매시 +5분에만 새 프레임을 워밍하므로(CLAUDE.md §26) 5분 간격 재폴링으로 충분.
+const FIELD_POLL_MS = 5 * 60_000
+
+// §27(2026-07-17) — `/api/field` 이진 프레임 디코드. 와이어 레이아웃은 backend/field_service.py
+// 모듈 독스트링 "프레임 계약"이 정본: [0:4) uint32 LE 헤더길이 N, [4:4+N) UTF-8 JSON 헤더
+// (FieldWireHeader, types.ts), [4+N:) Int16(LE) 스케일 본문. `scale`/`offset`/`nodata` 는 헤더가
+// 필드별로 명시하므로 여기서 하드코딩하지 않는다. 디코드 결과는 이진화 이전과 동일한 논리 모양
+// (u/v/data 가 중첩 number 배열)으로 만들어 webgl/windGL·sstGL 렌더러를 전혀 건드리지 않는다.
+function decodeInt16Grid(
+  buf: ArrayBuffer, byteStart: number, rows: number, cols: number,
+  scale: number, offset: number, nodata: number, nullForNodata: boolean,
+): (number | null)[][] {
+  const flat = new Int16Array(buf, byteStart, rows * cols)
+  const out: (number | null)[][] = new Array(rows)
+  for (let i = 0; i < rows; i++) {
+    const row: (number | null)[] = new Array(cols)
+    const base = i * cols
+    for (let j = 0; j < cols; j++) {
+      const raw = flat[base + j]
+      // nodata(육지/결측) — 수온은 null(렌더러가 투명 처리), 바람은 0(예전 JSON 경로에서도
+      // null→Float32Array 대입 시 ToNumber(null)===0 으로 사실상 0 이었던 것과 동일한 결과).
+      row[j] = raw === nodata ? (nullForNodata ? null : 0) : raw * scale + offset
+    }
+    out[i] = row
+  }
+  return out
+}
+
+function decodeFieldFrame(buf: ArrayBuffer): FieldResponse {
+  const dv = new DataView(buf)
+  const headerLen = dv.getUint32(0, true)
+  const headerJson = new TextDecoder('utf-8').decode(new Uint8Array(buf, 4, headerLen))
+  const header: FieldWireHeader = JSON.parse(headerJson)
+  if (!header.ready) return { ready: false, error: header.error }
+  const payloadStart = 4 + headerLen
+
+  let wind: FieldWind | undefined
+  if (header.wind) {
+    const w = header.wind
+    wind = {
+      valid_kst: w.valid_kst, source: w.source, bounds: w.bounds, rows: w.rows, cols: w.cols,
+      u: decodeInt16Grid(buf, payloadStart + w.u_offset, w.rows, w.cols, w.scale, w.offset, w.nodata, false) as number[][],
+      v: decodeInt16Grid(buf, payloadStart + w.v_offset, w.rows, w.cols, w.scale, w.offset, w.nodata, false) as number[][],
+    }
+  }
+  let sst: FieldSst | undefined
+  if (header.sst) {
+    const s = header.sst
+    sst = {
+      valid_kst: s.valid_kst, source: s.source, bounds: s.bounds, rows: s.rows, cols: s.cols,
+      data: decodeInt16Grid(buf, payloadStart + s.data_offset, s.rows, s.cols, s.scale, s.offset, s.nodata, true),
+    }
+  }
+  return { ready: true, wind, sst }
 }
 
 // 마커 히트박스 = el 자체의 고정 크기(anchor 기준 박스, 절대 변하지 않음 — 드리프트 방지의 핵심).
@@ -287,11 +370,13 @@ function Tag({ label }: { label: string }) {
 
 // ── Main component ──────────────────────────────────────────────────────
 export default function MapViewGL() {
-  const { stations, live, liveLoadedOnce, baseLayer, setBaseLayer, selectedStationId, setSelectedStationId, flyToRequest, openDetail,
+  const { stations, live, liveLoadedOnce, baseLayer, setBaseLayer, showWind, showSst, toggleWind, toggleSst,
+    selectedStationId, setSelectedStationId, flyToRequest, openDetail,
     closeDetail, detailOpenId, visibleStatuses, visibleCategories, resetFilters } = useStore(
     useShallow(s => ({
       stations: s.stations, live: s.live, liveLoadedOnce: s.liveLoadedOnce,
       baseLayer: s.baseLayer, setBaseLayer: s.setBaseLayer,
+      showWind: s.showWind, showSst: s.showSst, toggleWind: s.toggleWind, toggleSst: s.toggleSst,
       selectedStationId: s.selectedStationId, setSelectedStationId: s.setSelectedStationId, flyToRequest: s.flyToRequest,
       openDetail: s.openDetail, closeDetail: s.closeDetail, detailOpenId: s.detailOpenId,
       visibleStatuses: s.visibleStatuses, visibleCategories: s.visibleCategories, resetFilters: s.resetFilters,
@@ -305,6 +390,16 @@ export default function MapViewGL() {
   const mlPopupRef = useRef<maplibregl.Popup | null>(null)
   const popupBuoyIdRef = useRef<string | null>(null)
   const [mapReady, setMapReady] = useState(false)
+
+  // §26 — 2D 필드 오버레이 상태. `/api/field` 는 항상 "현재 1프레임"만 반환하므로(백엔드가 매시
+  // 워밍) 토글 on/off 와 무관하게 백그라운드에서 가볍게 폴링해두고, 실제 GPU 레이어 생성/파괴만
+  // 토글에 연동한다 — 켜는 순간 재요청 없이 바로 그려지는 "zero-loading" 체감을 프론트에서도 유지.
+  const [fieldData, setFieldData] = useState<FieldResponse | null>(null)
+  const windLayerRef = useRef<WindGL | null>(null)
+  const sstLayerRef = useRef<SstGL | null>(null)
+  // GL 컨텍스트 유실(GPU 드라이버 리셋 등) 복구용 — 레이어 인스턴스를 폐기 후 이 값을 올려
+  // 생성 이펙트를 강제 재실행시키면 새 캔버스로 처음부터 다시 만든다.
+  const [glReloadTick, setGlReloadTick] = useState(0)
   // §25 — 창 폭이 UHD 브레이크포인트(3300px)를 넘나들면 --ui-zoom 이 바뀌어(QHD 는 배율 없이 1
   // 유지) 마커를 새 배율로 다시 그려야 한다. debounce(200ms) 된 resize 리스너가 이 카운터를 올려 마커 생성
   // 이펙트(아래)를 강제 재실행시킨다 — 이펙트 안에서 zoomGen 변화를 감지하면 기존 마커를 전부
@@ -325,6 +420,27 @@ export default function MapViewGL() {
     }
     window.addEventListener('resize', onResize)
     return () => { window.removeEventListener('resize', onResize); if (t) clearTimeout(t) }
+  }, [])
+
+  // §26 — `/api/field` 폴링(토글 상태와 무관 — 위 refs 주석 참고). WebGL 미지원 환경(USE_GL=false)
+  // 이면 애초에 그릴 수 없으므로 요청 자체를 생략한다(불필요한 트래픽 방지).
+  useEffect(() => {
+    if (!USE_GL) return
+    let cancelled = false
+    const load = async () => {
+      try {
+        const r = await fetch('/api/field')
+        if (!r.ok) return
+        const buf = await r.arrayBuffer()
+        const d = decodeFieldFrame(buf)
+        if (!cancelled) setFieldData(d)
+      } catch {
+        // 조용히 재시도 — ready:false 취급과 동일하게 토글은 비활성 유지(§26 지시사항)
+      }
+    }
+    load()
+    const id = setInterval(load, FIELD_POLL_MS)
+    return () => { cancelled = true; clearInterval(id) }
   }, [])
 
   // 무데이터(수신 이력 없음) 지점은 이미 여기서 제외된 데이터셋 — 지도에는 정상/지연/미수신만 존재
@@ -380,7 +496,7 @@ export default function MapViewGL() {
 
     const map = new maplibregl.Map({
       container: containerRef.current,
-      style: useStore.getState().baseLayer === 'light' ? LIGHT_STYLE_URL : SAT_STYLE,
+      style: styleForBase(useStore.getState().baseLayer),
       center: CENTER,
       zoom: INIT_ZOOM,
       minZoom: 3.6,
@@ -433,8 +549,71 @@ export default function MapViewGL() {
   useEffect(() => {
     const map = mapRef.current
     if (!map || !mapReady) return
-    map.setStyle(baseLayer === 'light' ? LIGHT_STYLE_URL : SAT_STYLE)
+    map.setStyle(styleForBase(baseLayer))
   }, [baseLayer, mapReady])
+
+  // ── §26 setStyle() 안전망 — 필드 캔버스 재부착 ──────────────────────────
+  // 이 캔버스들은 style 이 아니라 Map 소유 DOM(getCanvasContainer())의 평범한 자식이라
+  // setStyle() 로 지워지지 않는다(실측 확인 완료 — 위 헤더 주석 참고)지만, 방어적으로
+  // 'styledata' 마다 부모를 재확인한다(멱등 — parentElement 가 이미 맞으면 아무 일도 안 함).
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !mapReady) return
+    const reattach = () => {
+      windLayerRef.current?.reattach()
+      sstLayerRef.current?.reattach()
+    }
+    map.on('styledata', reattach)
+    return () => { map.off('styledata', reattach) }
+  }, [mapReady])
+
+  // ── §26 바람장(GPU 파티클) 레이어 ────────────────────────────────────
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !mapReady) return
+    const wind = fieldData?.ready ? fieldData.wind : undefined
+    if (!USE_GL || !showWind || !wind) {
+      if (windLayerRef.current) { windLayerRef.current.remove(); windLayerRef.current = null }
+      return
+    }
+    if (!windLayerRef.current) {
+      windLayerRef.current = new WindGL(map, wind, GL_CAPS, () => {
+        // GL 컨텍스트 유실 — 인스턴스를 폐기하고 다음 틱에 새 캔버스로 재생성(수동 토글
+        // off→on 과 동일한 복구 경로).
+        windLayerRef.current?.remove()
+        windLayerRef.current = null
+        setGlReloadTick(t => t + 1)
+      })
+    } else {
+      windLayerRef.current.setData(wind)
+    }
+  }, [mapReady, showWind, fieldData, glReloadTick])
+
+  // ── §26 수온장(래스터) 레이어 ────────────────────────────────────────
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !mapReady) return
+    const sst = fieldData?.ready ? fieldData.sst : undefined
+    if (!USE_GL || !showSst || !sst) {
+      if (sstLayerRef.current) { sstLayerRef.current.remove(); sstLayerRef.current = null }
+      return
+    }
+    if (!sstLayerRef.current) {
+      sstLayerRef.current = new SstGL(map, sst, GL_CAPS, () => {
+        sstLayerRef.current?.remove()
+        sstLayerRef.current = null
+        setGlReloadTick(t => t + 1)
+      })
+    } else {
+      sstLayerRef.current.setData(sst)
+    }
+  }, [mapReady, showSst, fieldData, glReloadTick])
+
+  // 언마운트 시 GL 리소스 확실히 정리(rAF·리스너·캔버스 — WindGL/SstGL.remove() 가 전담).
+  useEffect(() => () => {
+    windLayerRef.current?.remove(); windLayerRef.current = null
+    sstLayerRef.current?.remove(); sstLayerRef.current = null
+  }, [])
 
   // ── 라벨 가시성(§12 전문가 패널 재조정 — 정상 라벨 상시노출이 "지저분함"의 원흉이었다) ──────────
   //    저줌(NORMAL_LABEL_ZOOM 미만): 정상 라벨은 후보에서 아예 제외 — 지연·미수신·hover만 노출.
@@ -624,11 +803,16 @@ export default function MapViewGL() {
         </div>
       )}
 
-      {/* 베이스 레이어 토글 — §25: uiz(지도 위 React 오버레이는 일반 UI 크롬이라 zoom 대상) */}
-      <div className="uiz" style={{ position: 'absolute', top: 12, left: 12, zIndex: 900, display: 'flex', gap: 6,
-        animation: 'fade-in 0.4s ease both' }}>
-        <LayerBtn label="위성" active={baseLayer === 'sat'} onClick={() => setBaseLayer('sat')} />
-        <LayerBtn label="라이트" active={baseLayer === 'light'} onClick={() => setBaseLayer('light')} />
+      {/* 베이스 레이어 전환(위성|라이트|다크 세그먼트 컨트롤 — §26 후속지시 #3, 순환버튼 폐기) +
+          그 아래 바람장/수온장 독립 on/off 토글(§26). §25: uiz(지도 위 React 오버레이는 일반
+          UI 크롬이라 zoom 대상) */}
+      <div className="uiz" style={{ position: 'absolute', top: 12, left: 12, zIndex: 900, display: 'flex',
+        flexDirection: 'column', gap: 6, alignItems: 'flex-start', animation: 'fade-in 0.4s ease both' }}>
+        <BaseLayerSegmented baseLayer={baseLayer} onSelect={setBaseLayer} />
+        <div style={{ display: 'flex', gap: 6 }}>
+          <FieldToggleBtn label="바람장" active={showWind} disabled={!USE_GL || !fieldData?.ready || !fieldData.wind} onClick={toggleWind} />
+          <FieldToggleBtn label="수온장" active={showSst} disabled={!USE_GL || !fieldData?.ready || !fieldData.sst} onClick={toggleSst} />
+        </div>
       </div>
 
       {/* 부이 수 칩 — 필터 미적용 시 숨김(§12: KPI·좌패널 '총 N개소'와 3중 중복). 필터가 좁혀졌을
@@ -650,8 +834,24 @@ export default function MapViewGL() {
 
       {/* 범례 — 바다누리식 정돈 박스(§16-추가): 형태=종류 / 색=상태, 색스와치+라벨 세로 스택.
           항상 표시하는 작은 고정 패널, 잔텍스트 최소화(설명 문구·카운트 없음). 좌하단 고정
-          (2026-07-15 재지시 §11 — 챗 FAB 는 우하단이라 반대 코너로 겹침 없음). §25: uiz 적용. */}
-      <div className="uiz" style={{ position: 'absolute', left: 12, bottom: 34, zIndex: 900, animation: 'fade-in 0.5s ease both' }}>
+          (2026-07-15 재지시 §11 — 챗 FAB 는 우하단이라 반대 코너로 겹침 없음). §25: uiz 적용.
+          §26 — 필드(바람장/수온장) 범례가 켜져 있으면 이 박스 "위"에 별도 카드로 쌓는다(같은
+          좌하단 열, 시각적으로 충돌하지 않게 gap 으로만 분리 — 부이 범례 자체는 변경 없음). */}
+      <div className="uiz" style={{ position: 'absolute', left: 12, bottom: 34, zIndex: 900, display: 'flex',
+        flexDirection: 'column', gap: 8, animation: 'fade-in 0.5s ease both' }}>
+        {(showWind || showSst) && fieldData?.ready && (fieldData.wind || fieldData.sst) && (
+          <div className="map-legend" style={{ borderRadius: 10, padding: '10px 13px 11px', display: 'flex',
+            flexDirection: 'column', gap: 8, minWidth: 150, maxWidth: 214 }}>
+            <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', color: 'var(--t-lo)' }}>
+              필드(모델·위성 자료)
+            </span>
+            {showWind && fieldData.wind && <FieldLegendRow kind="wind" field={fieldData.wind} />}
+            {showWind && fieldData.wind && showSst && fieldData.sst && (
+              <div style={{ borderTop: '1px solid var(--line)' }} />
+            )}
+            {showSst && fieldData.sst && <FieldLegendRow kind="sst" field={fieldData.sst} />}
+          </div>
+        )}
         <div className="map-legend" style={{ borderRadius: 10, padding: '10px 13px 11px', display: 'flex', flexDirection: 'column', gap: 9, minWidth: 150 }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: '0.02em', color: 'var(--t-lo)' }}>부이 유형</span>
@@ -690,18 +890,96 @@ export default function MapViewGL() {
   )
 }
 
-function LayerBtn({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
+// ── §26 후속지시 #3(2026-07-16) — 베이스맵 세그먼트 컨트롤: 위성|라이트|다크 3개가 가로로 붙은
+// 하나의 컨트롤. 순환 버튼(이전 BaseLayerToggleBtn, 화살표 아이콘)을 폐기하고 명시적 선택 UI 로
+// 교체 — 선택된 세그먼트만 진한 배경(--accent-100)으로 대비, 나머지는 투명. 세그먼트 사이 구분선.
+const BASE_LAYER_SEGMENTS: { key: BaseLayer; label: string }[] = [
+  { key: 'sat', label: '위성' },
+  { key: 'light', label: '라이트' },
+  { key: 'dark', label: '다크' },
+]
+
+function BaseLayerSegmented({ baseLayer, onSelect }: { baseLayer: BaseLayer; onSelect: (v: BaseLayer) => void }) {
   // §20 — 지도 위에 떠 있는 컨트롤이라 카드(--bg-elev)보다 밝은 --bg-float 로 표고(범례·줌컨트롤과 동일 톤).
   return (
-    <button onClick={onClick} aria-pressed={active} style={{
-      padding: '7px 14px', borderRadius: 6, cursor: 'pointer', fontSize: 13, fontWeight: 600,
-      background: active ? 'var(--accent-100)' : 'var(--bg-float)',
-      border: active ? '1px solid var(--accent-dim)' : '1px solid var(--line)',
-      color: active ? 'var(--accent-h)' : 'var(--t-mid)',
-      boxShadow: 'var(--shadow-card)',
-      transition: 'background 0.12s, border-color 0.12s, color 0.12s',
+    <div role="group" aria-label="지도 배경 선택" style={{
+      display: 'inline-flex', borderRadius: 6, overflow: 'hidden',
+      background: 'var(--bg-float)', border: '1px solid var(--line)', boxShadow: 'var(--shadow-card)',
     }}>
+      {BASE_LAYER_SEGMENTS.map((seg, i) => {
+        const active = baseLayer === seg.key
+        return (
+          <button key={seg.key} onClick={() => onSelect(seg.key)} aria-pressed={active}
+            title={`지도 배경: ${seg.label}`} style={{
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              padding: '7px 13px', cursor: active ? 'default' : 'pointer', fontSize: 13,
+              fontWeight: active ? 700 : 600, font: 'inherit',
+              background: active ? 'var(--accent-100)' : 'transparent',
+              color: active ? 'var(--accent-h)' : 'var(--t-mid)',
+              border: 'none', borderLeft: i > 0 ? '1px solid var(--line)' : 'none',
+              transition: 'background 0.12s, color 0.12s',
+            }}
+            onMouseEnter={e => { if (!active) e.currentTarget.style.background = 'var(--bg-hover)' }}
+            onMouseLeave={e => { if (!active) e.currentTarget.style.background = 'transparent' }}>
+            {seg.label}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+// ── §26 필드(바람장/수온장) on/off 토글 — 서로 배타 아님, 자료 미준비 시(ready:false) 비활성 ──
+function FieldToggleBtn({ label, active, disabled, onClick }: {
+  label: string; active: boolean; disabled: boolean; onClick: () => void
+}) {
+  return (
+    <button onClick={onClick} disabled={disabled} aria-pressed={active}
+      title={disabled ? '자료 준비 중' : undefined} style={{
+        display: 'inline-flex', alignItems: 'center', gap: 6,
+        padding: '6px 12px', borderRadius: 6, fontSize: 12.5, fontWeight: 600,
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        background: active ? 'var(--accent-100)' : 'var(--bg-float)',
+        border: `1px solid ${active ? 'var(--accent-dim)' : 'var(--line)'}`,
+        color: disabled ? 'var(--t-lo)' : (active ? 'var(--accent-h)' : 'var(--t-mid)'),
+        opacity: disabled ? 0.5 : 1,
+        boxShadow: 'var(--shadow-card)',
+        transition: 'background 0.12s, border-color 0.12s, color 0.12s, opacity 0.12s',
+      }}>
+      <span style={{ width: 7, height: 7, borderRadius: '50%', flexShrink: 0,
+        background: active ? 'var(--accent-h)' : 'var(--t-lo)', opacity: active ? 1 : 0.6 }} />
       {label}
     </button>
+  )
+}
+
+// ── §26 필드 범례 — 색 그라디언트 바 + 최소/최대 값 + 출처/기준시각(모델·위성 자료임을 명시,
+//    "KST" 문자열은 절대 쓰지 않는다 — 시각값(valid_kst)은 이미 "YYYY-MM-DD HH:MM" 그대로 표기) ──
+function fieldGradientCss(colorFn: (v: number) => [number, number, number], min: number, max: number): string {
+  const stops = [0, 0.25, 0.5, 0.75, 1].map(t => {
+    const [r, g, b] = colorFn(min + t * (max - min))
+    return `rgb(${Math.round(r)},${Math.round(g)},${Math.round(b)}) ${Math.round(t * 100)}%`
+  })
+  return `linear-gradient(90deg, ${stops.join(', ')})`
+}
+
+function FieldLegendRow({ kind, field }: { kind: 'wind' | 'sst'; field: FieldWind | FieldSst }) {
+  const isWind = kind === 'wind'
+  const gradient = isWind ? fieldGradientCss(windColor, 0, WIND_SPEED_MAX) : fieldGradientCss(sstColor, SST_MIN, SST_MAX)
+  const unit = isWind ? ' m/s' : '℃'
+  const lo = isWind ? '0' : `${SST_MIN}`
+  const hi = isWind ? `${WIND_SPEED_MAX}+` : `${SST_MAX}+`
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+      <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--t-hi)' }}>{isWind ? '바람장' : '수온장'}</span>
+      <div style={{ height: 7, borderRadius: 4, background: gradient, border: '1px solid var(--line)' }} />
+      <div className="tnum" style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--t-lo)' }}>
+        <span>{lo}{unit}</span>
+        <span>{hi}{unit}</span>
+      </div>
+      <div style={{ fontSize: 11, color: 'var(--t-lo)', lineHeight: 1.4, wordBreak: 'keep-all' }}>
+        {field.source} · {field.valid_kst}
+      </div>
+    </div>
   )
 }

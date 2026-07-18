@@ -17,7 +17,9 @@
 | 시계열+QC | KMA `kma_buoy2.php`(tm1~tm2, AQC/MQC) | KMA |
 | 실측+예측 조위 | KHOA `surveyTideLevel`(bscTdlvHgt/tdlvHgt) | KHOA |
 | 수온 | KHOA `surveyWaterTemp` | KHOA |
-| 지도 바람장·수온장(2D 배경) | GFS 0.25° `UGRD/VGRD@10m` + `TMP:surface`×`LAND:surface` (AWS `.idx`+Range) | NOAA (무키) |
+| 지도 바람장(2D 배경) | JMA MSM 5.5km `10u/10v` (RISH, Range) → GFS 0.25° 폴백 | JMA/NOAA (무키) |
+| 지도 수온장(2D 배경) | NOAA RTOFS 1/12° `prog.nc`(netCDF Range) → GFS 표층 → OISST | NOAA (무키) |
+| 지도 육지 마스크(정적) | GSHHG 풀해상도 해안선 → `landmask.png` | SOEST (무키) |
 
 ---
 
@@ -109,31 +111,40 @@
 
 ---
 
-## 3. NOAA 공개 오픈데이터 (무키·무신청) — 지도 2D 필드 오버레이 전용
+## 3. 공개 오픈데이터 (무키·무신청) — 지도 2D 필드 오버레이 전용
 
-> 실측일 2026-07-16. **관측(부이)과 별개 계통**이다 — 필드는 모델/위성 격자값이므로 지도 배경으로만 쓰고, 마커·팝업·시계열의 관측값과 혼동시키지 않는다(범례에 출처·기준시각 명시). 인증키가 없어 신청 절차도 없다.
+> 실측일 2026-07-16~18. **관측(부이)과 별개 계통**이다 — 필드는 모델/위성 격자값이므로 지도 배경으로만 쓰고, 마커·팝업·시계열의 관측값과 혼동시키지 않는다(범례에 출처·기준시각 명시). 전부 무키·무신청. 소스는 **최근성(무발행지연) + 고해상도**를 기준으로 선정했고, 각 필드는 **3단 폴백**(주 소스 실패 시 하향)을 둔다.
 
-### 3-1. GFS 0.25° (바람장 + 표층수온) — 채택
+### 3-1. 바람장 — JMA MSM 5.5km (주) → GFS 0.25° (폴백)
 
-- 버킷: `https://noaa-gfs-bdp-pds.s3.amazonaws.com/gfs.{YYYYMMDD}/{CC}/atmos/gfs.t{CC}z.pgrb2.0p25.f{FFF}`
-- **전체 GRIB 를 받지 않는다.** 같은 이름 + `.idx` 사이드카(텍스트)를 먼저 받아 필요한 레코드의 바이트 오프셋을 구하고, 본 파일에는 `Range:` 헤더로 해당 구간만 요청한다. 한반도 영역 4개 레코드 합계가 수백 KB 수준.
-- 사용 레코드: `UGRD:10 m above ground` · `VGRD:10 m above ground` · `TMP:surface` · `LAND:surface`
-- **수온**: `pgrb2` 에 `WTMP` 는 **없다**. 대신 `TMP:surface` 를 `LAND:surface`(1=육지) 로 마스킹하면 해수면온도가 된다(K→℃). GFS 표층 분석은 위성 SST 를 동화한 값이며, **바람장과 같은 파일·같은 기준시각**이라 발행 지연이 0 이고 두 필드의 시각이 정확히 일치한다.
-- ⚠️ **idx 매칭은 반드시 `VAR:LEVEL:` 완전일치**로 할 것. 부분문자열 포함(`"TMP:surface:" in line`)으로 찾으면 `ICETMP:surface:` 에 먼저 걸려 엉뚱한 바이트 범위를 잡고, 바다 격자가 전부 `9999` 센티널로 나온다(실제 발생·수정한 버그).
-- 폴백: NOMADS filter CGI `https://nomads.ncep.noaa.gov/cgi-bin/filter_gfs_0p25_1hr.pl`(한반도 서브셋 실측 27,694 B · 0.45 s). AWS 도달 불가 시에만.
-- 최신 사이클 탐색: 발행 지연을 감안해 최신 사이클부터 시도하고 실패 시 이전 사이클로 내려간다.
+- **JMA MSM**(일본 기상청 메소모델, 지상 10m 바람): 교토대 RISH 학술 미러(무키).
+  `http://database.rish.kyoto-u.ac.jp/arch/jmadata/data/gpv/original/{YYYY}/{MM}/{DD}/Z__C_RJTD_{YYYYMMDDHH}0000_MSM_GPV_Rjp_Lsurf_FH00-15_grib2.bin`
+  - 격자(GRIB2 섹션3 실측): **481×505, 경도 120~150° / 위도 22.4~47.6°, di=0.0625°·dj=0.05° ≈ 5.5km**. 사이클 00/03/06/09/12/15/18/21Z, `Lsurf_FH00-15`=+0~15h. RISH 발행 지연 **약 5~8h** → 사이클+예보시간(FH)으로 목표 시각을 맞춘다(GFS 도 예보시간을 쓰므로 성격 동일).
+  - 파일이 **69MB 단일 GRIB2 멀티필드 메시지**(section0/1/3 공유 + section4~7 이 190회 반복)다. ⚠️ `eccodes.codes_new_from_message` 로 열면 **첫 필드(prmsl)만 조용히 반환**하고 나머지(10u/10v 포함)를 버린다 — `codes_grib_multi_support_on()` + 파일 이터레이션 필수.
+  - 필드 순서는 매시 고정(`[prmsl, sp, 10u, 10v, t2m, r2m, lcc, mcc, hcc, tcc]` + 1h부터 누적 2필드), 바이트 길이도 사이클 불변 → 10u/10v 바이트 오프셋을 헤더 1회 읽기로 **산식 계산**. `Accept-Ranges: bytes` 지원 → 실측 **Range 요청 2회·0.57s·729KB**(전체 69MB 미다운로드).
+  - **영역**: MSM 교집합 `[120,24,142,46]` 로 자른다. 서쪽 115~120°E 는 바람장이 없다(사용자 확정 — GFS 이어붙이기 안 함). MSM 은 **첫 행이 북쪽**(lat 47.6→22.4)이라 우리 규약(row0=남단)에 맞춰 **뒤집는다**.
+- **폴백 GFS 0.25°**: `https://noaa-gfs-bdp-pds.s3.amazonaws.com/gfs.{YYYYMMDD}/{CC}/atmos/gfs.t{CC}z.pgrb2.0p25.f{FFF}` — `.idx` 사이드카로 `UGRD/VGRD:10 m above ground` 레코드 바이트범위만 Range. 폴백 시 bounds 는 `[115,24,142,46]`·89×109 로 복귀. NOMADS filter CGI(`nomads.ncep.noaa.gov`)는 최후 폴백.
 
-### 3-2. OISST v2.1 (위성 수온) — 폴백만
+### 3-2. 수온장 — NOAA RTOFS 1/12° (주) → GFS 표층 (폴백) → OISST (최후)
 
-- `https://noaa-cdr-sea-surface-temp-optimum-interpolation-pds.s3.amazonaws.com/data/v2.1/avhrr/{YYYYMM}/oisst-avhrr-v02r01.{YYYYMMDD}{suffix}.nc` (`suffix` = `_preliminary` 우선 → 최종본)
-- **발행 지연 D-2.** 2026-07-16 09 UTC 실측: `20260716`·`20260715` 는 예비본/최종본 모두 404, `20260714_preliminary` 만 200. NOAA CRW 5km `coraltemp` 도 동일하게 D-2.
-- 따라서 "현재 시점(KST)" 서사에는 부적합 → **GFS `TMP:surface` 를 1순위로, OISST 는 GFS 표층 수신 실패 시 폴백**으로만 쓴다. 폴백 시 D-1→D-5 역탐색.
+- **RTOFS**(NCEP 전지구 해양모델, HYCOM 기반): 위성·부이·Argo 동화라 쿠로시오·전선·소용돌이 등 실제 해양 구조가 보인다(GFS 표층 대비 수온 기울기 **1.8~2배**, 기울기 편차 **2.7배**).
+  - ⚠️ SST 는 AWS `noaa-nws-rtofs-pds` 의 `diag.nc`/`ice.nc` 엔 **없다**. `prog.nc` 에만 있고 이건 **NOMADS HTTPS 만** 배포:
+    `https://nomads.ncep.noaa.gov/pub/data/nccf/com/rtofs/prod/rtofs.{YYYYMMDD}/rtofs_glo_2ds_f{FFF}_prog.nc`
+  - NOMADS **OpenDAP 은 2026-02-23 공식 폐지**(SCN 25-81) → 서버측 서브셋 불가. 대신 `prog.nc`(~150~195MB)가 HDF5 청크 `(1,825,1125)` 라 **한반도 박스가 청크 1개 안에** 들어가, netCDF4 `#mode=bytes` HTTP Range 로 그 청크만 읽는다(실측 open+read **1.5~2s**). fsspec/s3fs 불필요.
+  - 전지구 curvilinear 격자지만 24~46N/115~142E 구간은 **rectilinear**(47°N tripolar cap 이남) — 축 재구성 후 **1/12° 정규격자 265×325** 로 분리형 선형 리샘플(NaN-safe, 육지 미번짐). 사이클 1일 1회(00Z), f000~f072 시간별, 발행 지연 실측 **~12.5h** → `fhr = 목표시 − 사이클시`. **row0=남단** 규약 준수.
+- **폴백 GFS 표층**: `TMP:surface` 를 `LAND:surface`(1=육지)로 마스킹(K→℃). ⚠️ **idx 매칭은 `VAR:LEVEL:` 완전일치** — 부분문자열이면 `ICETMP:surface:` 에 걸려 바다 격자가 전부 `9999` 센티널이 된다(실측·수정 버그).
+- **최후 OISST v2.1**: `https://noaa-cdr-sea-surface-temp-optimum-interpolation-pds.s3.amazonaws.com/data/v2.1/avhrr/{YYYYMM}/oisst-avhrr-v02r01.{YYYYMMDD}{suffix}.nc`(`_preliminary`→최종). **발행 지연 D-2**(2026-07-16 09 UTC 실측: 당일·전일 404, `20260714_preliminary` 만 200. CRW 5km `coraltemp` 도 D-2) — 최근성 부적합이라 최후 폴백만. D-1→D-5 역탐색.
 
-### 3-3. 운영 (`backend/field_service.py`)
+### 3-3. 해안선 마스크 — GSHHG 풀해상도 (정적)
 
-- 매시 +5분에 새 프레임을 받아 인메모리 원자 교체 + `data/cache/field/` 의 이전 시각 파일 삭제(**현재 1프레임만 유지**). 프론트는 `/api/field` 1회 호출로 즉시 렌더(zero-loading).
-- 수집 실패 시 직전 프레임을 계속 서빙(stale)하고 10분 뒤 재시도. 부팅 시 캐시 파일은 75분 이내인 경우만 채택.
-- 실측 페이로드: 89×109 격자(bounds 115~142E, 24~46N), 바람+수온 합계 **181 KB**.
+- SST 값 격자(9km)로는 작은 섬·복잡 해안선을 못 그려 섬 안쪽까지 색이 번진다 → **값 해상도와 경계 해상도를 분리**. 정밀 해안선으로 정적 육지 마스크를 구워 표출을 실제 해안선에서 잘라낸다(해안선은 불변 → 시간별 갱신과 무관, 1회 빌드).
+- 소스: `https://www.soest.hawaii.edu/pwessel/gshhg/gshhg-shp-2.3.7.zip`(149MB, `GSHHS_f_L1.shp` = 풀해상도 육지). NGDC `/latest/` 경로는 404 — SOEST 미러 사용. 처리는 `pyshp`+`Pillow` 만(무 GDAL): 도메인 내 7,533 폴리곤을 4배 슈퍼샘플 래스터화→다운샘플해 **4829×3935(≈510×620m) 그레이스케일 커버리지 마스크** 생성. 산출물 `frontend/public/landmask.png`(**184KB**, 브라우저 1회 로드·캐시) + `landmask.json`(bounds/치수/행방향). 빌드 스크립트 `scripts/build_landmask.py`.
+- 프론트 셰이더는 이 마스크를 **주 게이트**(`smoothstep`)로, RTOFS 자체 nodata 를 보조로 써서 실제 해안선까지 바다색을 채우고(육지 셀은 nearest-sea-fill 로 색 연장) 섬을 정확히 뚫는다. 실측: 마라도·가거도·독도·울릉도 마스크(diff≈0), 바다 색 유지(diff 66~74).
+
+### 3-4. 운영 (`backend/field_service.py`)
+
+- 매시 새 프레임을 받아 인메모리 원자 교체 + `data/cache/field/` 의 이전 파일 삭제(**현재 1프레임만 유지**). 프론트는 `/api/field` 1회로 즉시 렌더(zero-loading). 수집 실패 시 직전 프레임 계속 서빙(stale)·재시도, 부팅 시 캐시 75분 이내만 채택.
+- **페이로드는 이진**: `[uint32 헤더길이][JSON 헤더][Int16 스케일 본문]` 단일 응답 + `GZipMiddleware`. Int16(scale 0.01, 육지 nodata=-32768)이라 JSON 대비 값당 6→2B. 바람 5.5km(441×353) + 수온 9km(265×325) 네이티브를 담고 **원시 776KB / gzip 전송 470KB(47ms)** — 이전 GFS 28km JSON(181KB, 89×109)보다 격자를 8배 늘리고도 전송량은 유사, 표기 해상도(범례 "5km")와 실제가 일치.
 
 ---
 
@@ -148,5 +159,8 @@
 - 기상청 API허브 해양관측: https://apihub.kma.go.kr/apiList.do?seqApi=3
 - 공공데이터포털 해양기상월보: https://www.data.go.kr/data/15059094/openapi.do
 - KHOA 서비스: data.go.kr 15142507(조위)·15142506(수온)·15155508(dtRecent)·15155516(twRecent)·15155994(noonWave)·15146602/15146611(운영현황)
+- JMA MSM (교토대 RISH 미러): http://database.rish.kyoto-u.ac.jp/arch/jmadata/
 - NOAA GFS (AWS Open Data): https://registry.opendata.aws/noaa-gfs-bdp-pds/ · NOMADS: https://nomads.ncep.noaa.gov/
+- NOAA RTOFS (NOMADS): https://nomads.ncep.noaa.gov/pub/data/nccf/com/rtofs/prod/
 - NOAA OISST v2.1 (AWS Open Data): https://registry.opendata.aws/noaa-cdr-oceanic/
+- GSHHG 해안선 (SOEST Hawaii): https://www.soest.hawaii.edu/pwessel/gshhg/

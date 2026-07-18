@@ -13,7 +13,8 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.middleware.gzip import GZipMiddleware
+from fastapi.responses import Response, StreamingResponse
 
 import chat as chat_mod
 import config
@@ -49,6 +50,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+# `/api/field` 가 이진(application/octet-stream)으로 바뀌어도(§27) gzip 은 여전히 도움이 된다
+# (육지 nodata 센티널 반복·완만한 그라디언트 구간이 꽤 압축됨). Accept-Encoding: gzip 인 요청에만
+# 자동 적용되고, minimum_size 미만 응답은 그냥 통과한다.
+app.add_middleware(GZipMiddleware, minimum_size=500)
 
 
 # ── /api/live 스냅샷·상태 집계 ────────────────────────────────────────────────
@@ -118,10 +123,16 @@ def api_status():
 def api_field():
     """2D 필드 오버레이(바람·표층수온) — 현재 KST 1시간 프레임 1장(타임라인 없음, `field_service.py`).
 
-    배경 스레드가 미리 채워둔 인메모리 페이로드를 그대로 반환한다(요청측 외부호출·재계산 0).
-    아직 첫 수집 전(부팅 직후, 신선한 디스크 캐시도 없음)이면 `{"ready": false, "error": ...}`.
+    **이진 응답(§27, 2026-07-17)**: `application/octet-stream` — 4바이트 length-prefix(uint32 LE)
+    + UTF-8 JSON 헤더 + Int16 스케일 본문(바람 u/v·수온 각각). 정확한 바이트 레이아웃·스케일/오프셋/
+    nodata 규약은 `field_service.py` 모듈 독스트링 "프레임 계약" 참고.
+
+    배경 스레드가 미리 인코딩까지 끝내둔 바이트열을 그대로 반환한다(요청측 외부호출·재계산·
+    재인코딩 0). 아직 첫 수집 전(부팅 직후, 신선한 디스크 캐시도 없음)이면 헤더만 있는
+    `{"ready": false, "error": ...}` 프레임(본문 0바이트).
     """
-    return field_service.get_field_payload()
+    return Response(content=field_service.get_field_payload_bytes(),
+                     media_type="application/octet-stream")
 
 
 @app.get("/api/timeseries")

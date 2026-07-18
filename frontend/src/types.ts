@@ -72,7 +72,74 @@ export interface LiveItem {
   available_metrics?: string[]
 }
 
-export type BaseLayer = 'sat' | 'light'
+export type BaseLayer = 'sat' | 'light' | 'dark'
+
+// ── GET /api/field (§26 — 2D 필드 오버레이: JMA MSM/GFS 바람장·RTOFS/GFS/OISST 수온장, 현재
+// 1프레임만) ─────────────────────────────────────────────────────────────────────────────────
+// §27(2026-07-17, 이진화): 와이어 포맷은 JSON 숫자배열이 아니라 **이진**(`Content-Type:
+// application/octet-stream`) — 바이트 레이아웃은 `[0:4) uint32 LE 헤더길이 N` +
+// `[4:4+N) UTF-8 JSON 헤더(FieldWireHeader)` + `[4+N:) Int16(LE) 스케일 본문`. 헤더가 지정하는
+// `scale`/`offset`/`nodata` 로 `실값 = raw_int16*scale+offset`, `raw_int16===nodata`(-32768,
+// Int16 최솟값)면 육지/결측. 정확한 오프셋 규약은 backend/field_service.py 모듈 독스트링 "프레임
+// 계약" 이 정본이고, 디코드는 MapViewGL.tsx 의 `decodeFieldFrame()`이 수행한다.
+//
+// 아래 FieldWind/FieldSst/FieldResponse 는 그 이진을 디코드한 **이후의 논리 형태**(webgl/windGL·
+// sstGL 렌더러가 그대로 소비하는 모양 — 이진화 이전과 동일하게 유지해 렌더러 변경을 피했다).
+// bounds = [west, south, east, north]. **row 0 = 최남단, col 0 = 최서단**(백엔드 규약 — 프론트
+// webgl/fieldCommon.ts 의 격자 변환이 이 방향을 그대로 전제한다. 뒤집으면 지도와 어긋난다).
+export interface FieldWind {
+  valid_kst: string
+  source: string
+  bounds: [number, number, number, number]
+  rows: number
+  cols: number
+  u: number[][]
+  v: number[][]
+}
+export interface FieldSst {
+  valid_kst: string
+  source: string
+  bounds: [number, number, number, number]
+  rows: number
+  cols: number
+  /** 육지 격자는 null — 렌더러가 반드시 투명 처리해야 한다. */
+  data: (number | null)[][]
+}
+export interface FieldResponse {
+  ready: boolean
+  error?: string | null
+  wind?: FieldWind
+  sst?: FieldSst
+}
+
+// ── `/api/field` 이진 헤더의 JSON 부분(디코드 전 와이어 스키마) — decodeFieldFrame() 전용 타입.
+export interface FieldWireArrayMeta {
+  valid_kst: string
+  source: string
+  bounds: [number, number, number, number]
+  rows: number
+  cols: number
+  dtype: 'int16'
+  scale: number
+  offset: number
+  nodata: number
+}
+export interface FieldWireWindMeta extends FieldWireArrayMeta {
+  u_offset: number
+  u_length: number
+  v_offset: number
+  v_length: number
+}
+export interface FieldWireSstMeta extends FieldWireArrayMeta {
+  data_offset: number
+  data_length: number
+}
+export interface FieldWireHeader {
+  ready: boolean
+  error?: string | null
+  wind?: FieldWireWindMeta
+  sst?: FieldWireSstMeta
+}
 
 // ── 상태 색상 (index.css 의 CSS 변수와 짝) ──────────────────────────────────
 export const STATUS_COLOR: Record<BuoyStatus, string> = {
