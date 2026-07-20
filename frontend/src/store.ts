@@ -77,8 +77,8 @@ export const useStore = create<Store>((set, get) => ({
 
   selectedStationId: null,
   baseLayer: 'sat',
-  showWind: false,
-  showSst: false,
+  showWind: true,
+  showSst: true,
   flyToRequest: null,
   detailOpenId: null,
   visibleStatuses: new Set(ALL_STATUSES),
