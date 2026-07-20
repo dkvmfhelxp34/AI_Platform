@@ -111,7 +111,9 @@ void main(){
 
   // 입자별 고유 보속 편차(±12%) — 균일한 기계적 움직임 대신 유기적인 흐름
   float pace = 0.88 + 0.24 * hash(v_uv * 7.77 + 3.31);
-  float dt = u_speed * (0.0018 + spd*0.00009) * u_zoomScale * pace;
+  // 상수항(floor)이 풍속항을 압도하면 잔잔/강풍이 똑같이 빨라 보인다. floor 를 낮추고
+  // 풍속항을 키워 실제 풍속에 비례하게 — 잔잔한 곳은 느리게, 강풍은 뚜렷이 빠르게.
+  float dt = u_speed * (0.0010 + spd*0.00017) * u_zoomScale * pace;
   float cosLat = cos(radians(ll.y));
   // 중점(RK2) 적분: 반걸음 지점의 바람을 다시 샘플링해 곡률을 따라 휘게 함.
   float midLat = ll.y + uv.y*dt*0.5;
@@ -509,7 +511,7 @@ export class WindGL {
     gl.uniform2f(this._updLoc.u_seed, Math.random(), Math.random())
     gl.uniform2f(this._updLoc.u_lifeRange, 60, 140)
     gl.uniform1f(this._updLoc.u_dropRate, 0.012)
-    gl.uniform1f(this._updLoc.u_speed, 0.72)   // graceful pacing
+    gl.uniform1f(this._updLoc.u_speed, 0.5)   // graceful pacing (실제 풍속이 약~보통이라 과속 인상 완화)
     // 줌 적응 보폭: 기본 줌(≈6) 초과 확대 시 걸음을 줄여 화면상 세그먼트 길이 유지 (하한 0.15)
     const zs = Math.max(0.15, Math.pow(0.62, Math.max(0, this._map.getZoom() - 6.0)))
     gl.uniform1f(this._updLoc.u_zoomScale, zs)

@@ -40,7 +40,8 @@ import {
 const ACCENT_HEX = '#4E9AC9'    // 관측 — 마린 블루 실선(index.css --accent)
 const FORECAST_HEX = '#DDA53B'  // 예측(점선) — 앰버, 관측(블루)·지연상태색과 구분되는 난색
 const QC_INST_HEX = '#E0699A'   // 관측기관 QC 플래그(로즈) — 다크 플롯 위 대비 확보를 위해 밝게
-const QC_AI_HEX = '#9B84E8'     // 알고리즘(AI) 이상감지(바이올렛) — 기관 QC 와 다른 색으로 구분
+const QC_AI_HEX = '#FF3B30'     // 알고리즘(AI) 이상감지(선명한 빨강) — 기관 QC(로즈)·상태색(--lost #F0575C)과
+                                 // 구분되는 채도 높은 레드, 다크 플롯(#2F3C4B) 위 대비 확보
 const GRID_HEX = '#3A4756'      // 그리드라인(수평) — 다크 플롯면 위 옅지만 확실히 보이는 수평 그리드
 const LINE_HEX = '#47576A'
 const TLO_HEX = '#B7C4D1'
@@ -784,7 +785,7 @@ function TimeseriesSection({ buoy, range, setRange, metric, setMetric, ts, loadi
                 ))}
                 {aiDots.map(r => (
                   <ReferenceDot key={`ai-${r.t}`} x={r.t} y={r.obs as number}
-                    r={2.2} fill={QC_AI_HEX} stroke="none" ifOverflow="extendDomain" />
+                    r={5} fill={QC_AI_HEX} stroke={PLOT_BG_HEX} strokeWidth={1.5} ifOverflow="extendDomain" />
                 ))}
               </ComposedChart>
             </ResponsiveContainer>

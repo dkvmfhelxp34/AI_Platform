@@ -832,14 +832,11 @@ export default function MapViewGL() {
         </div>
       )}
 
-      {/* 범례 2종 — §26 후속지시(2026-07-20): 바람장·수온장 기본 ON 전환으로 필드 범례가 상시
-          노출되면서 기존 "좌하단에 세로로 겹겹이 쌓기"가 화면 왼쪽 절반을 무겁게 잠식했다. 두
-          범례를 서로 다른 코너로 분리한다 — 부이 범례(좌하단, 변경 없음)는 연안 밀집 마커가 몰린
-          중앙·서해안에서 충분히 떨어져 있고, 필드 범례(우하단)는 챗 FAB(우하단, right:22 bottom:22
-          54×54)과 같은 우측 열에 세로로 쌓되 FAB 위 14px 간격을 두어 겹치지 않는다. 각 카드는
-          "bottom" 절대좌표로 고정되어 있어 내용(필드 on/off 행 수)에 따라 높이가 바뀌어도 아래쪽
-          기준선은 그대로이고 카드가 위로만 자란다 — 다른 요소를 침범하지 않는다. */}
-      <div className="uiz" style={{ position: 'absolute', left: 12, bottom: 34, zIndex: 900, animation: 'fade-in 0.5s ease both' }}>
+      {/* 범례 — 부이 유형/수신상태(항상) + 그 우측에 필드(바람장/수온장) 범례.
+          사용자 지시(2026-07-20): 필드 범례를 부이 범례 우측에 붙이고, 두 필드를 모두 끄면
+          필드 범례는 사라진다(아래 조건부 렌더). 좌하단 한 컨테이너에 가로로 나란히 두되 하단
+          정렬(flex-end)이라 높이가 달라도 바닥선이 맞고, 필드 범례가 빠지면 부이 범례만 홀로 남는다. */}
+      <div className="uiz" style={{ position: 'absolute', left: 12, bottom: 34, zIndex: 900, display: 'flex', flexDirection: 'row', alignItems: 'stretch', gap: 10, animation: 'fade-in 0.5s ease both' }}>
         <div className="map-legend" style={{ borderRadius: 10, padding: '10px 13px 11px', display: 'flex', flexDirection: 'column', gap: 9, minWidth: 150 }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: '0.02em', color: 'var(--t-lo)' }}>부이 유형</span>
@@ -863,15 +860,11 @@ export default function MapViewGL() {
             ))}
           </div>
         </div>
-      </div>
 
-      {/* 필드(바람장/수온장) 범례 — 우하단, 챗 FAB(right:22 bottom:22 54×54) 바로 위 열.
-          showWind/showSst 가 둘 다 꺼지면 카드 자체가 사라진다(아래 조건부 렌더). 켜진 필드만
-          행으로 표시 — 예: 바람장만 ON 이면 수온장 행 없이 카드가 그만큼 낮아진다. */}
-      {(showWind || showSst) && fieldData?.ready && (fieldData.wind || fieldData.sst) && (
-        <div className="uiz" style={{ position: 'absolute', right: 22, bottom: 90, zIndex: 900, animation: 'fade-in 0.5s ease both' }}>
+        {/* 필드(바람장/수온장) 범례 — 부이 범례 우측. 두 필드 모두 OFF 면 렌더 안 됨. 켜진 필드만 행 표시. */}
+        {(showWind || showSst) && fieldData?.ready && (fieldData.wind || fieldData.sst) && (
           <div className="map-legend" style={{ borderRadius: 10, padding: '9px 12px 10px', display: 'flex',
-            flexDirection: 'column', gap: 7, minWidth: 148, maxWidth: 196 }}>
+            flexDirection: 'column', justifyContent: 'center', gap: 7, minWidth: 148, maxWidth: 196 }}>
             <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', color: 'var(--t-lo)' }}>
               필드(모델·위성 자료)
             </span>
@@ -881,8 +874,8 @@ export default function MapViewGL() {
             )}
             {showSst && fieldData.sst && <FieldLegendRow kind="sst" field={fieldData.sst} />}
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* 저작권 표기 (attributionControl 대체 — 최소 표기, 지도 규약상 관례적으로 작게 유지).
           베이스 레이어별로 문자색을 뒤집는다 — 라이트 벡터맵 위엔 어두운 글자+밝은 헤일로,

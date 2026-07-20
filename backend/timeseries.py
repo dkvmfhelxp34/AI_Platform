@@ -385,12 +385,26 @@ def _khoa_timeseries(obs_code: str, days_float: float, label: str) -> dict:
     now = kma_marine.now_kst()
     days_capped = min(days_float, _KHOA_HIST_CAP_DAYS)
 
+    # §버그픽스(2026-07-20) — 예전엔 `days_capped > 2.0` 인 범위(7d 이상)만 oceangrid 누적 이력을
+    # 조회하고, 그보다 짧은(24h 포함!) 범위는 twRecent "최근 롤링"(관측 실측상 최대 10건)만으로
+    # 채웠다. twRecent 롤링은 "지금 시점 기준 최근 N건"일 뿐 실제 하루 창이 아니라서:
+    #   (a) 정상 수신 지점도 24h 가 10점 안팎으로 빈약했고(10분 주기면 하루 ~144점이어야 함),
+    #   (b) 관측 지연 지점(twRecent 자체가 갱신을 못 받아 비어 있음)은 24h 가 통째로 0점("데이터
+    #       없음")이 됐다 — 실측: 완도항 TW_0078(지연 ~3.3h) 24h=0점, 대한해협 KG_0024(정상) 24h=10점.
+    # 반면 range=7d/30d 는 이미 oceangrid day-loop 누적 이력을 썼고(완도항 7d=1226점, 최신 12:10
+    # 까지 포함) 문제가 없었다 — 즉 "누적 이력 저장소"는 이미 있었고 24h 경로만 안 썼다.
+    # 고침: 1일(24h) 이상 범위는 전부 이 누적 이력(oceangrid day-loop)에서 만들고 요청 창으로 클립한다
+    # (7d 와 동일 소스). twRecent 보다 짧은 레거시 `hours`(<24h, range 미지정) 만 예전처럼 롤링 전용
+    # 으로 남겨(호출량 관리, 이 범위는 애초에 버그 재현 대상이 아니었다).
     points: list[dict] = []
-    if days_capped > 2.0:
-        # 단기(≤2일)는 twRecent 롤링만으로 충분 — day-loop 는 그보다 긴 범위에서만 호출(응답성/호출량 관리).
+    if days_capped >= 1.0:
         start_date = (now - timedelta(days=days_capped)).date()
         end_date = now.date()
+        window_start = now - timedelta(days=days_float)
         for r in khoa_api.fetch_oceangrid_range(obs_code, start_date, end_date):
+            t_parsed = _parse_ts(r.get("t"))
+            if t_parsed is not None and t_parsed < window_start:
+                continue  # 캘린더-일 단위 조회라 창 시작 이전 일부가 섞여 들어옴 — 요청 창으로 클립
             points.append({
                 "t": r.get("t"),
                 "wave": r.get("wave"),

@@ -9,15 +9,20 @@
 """
 from __future__ import annotations
 
+import concurrent.futures
+import json
+import os
 import re
+import tempfile
 import threading
 import time
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
 import requests
 
+import kma_marine
 from config import require_khoa_key
 
 TW_RECENT_URL = "https://apis.data.go.kr/1192136/twRecent/GetTWRecentApiService"
@@ -39,6 +44,12 @@ _OCEANGRID_UA = "Mozilla/5.0 (compatible; BuoyPlatform/1.0; +internal-research-d
 
 _TIMEOUT = 15
 _REF_FILE = Path(__file__).resolve().parent.parent / "docs" / "reference" / "khoa_stations.txt"
+
+# ── oceangrid day-loop 디스크 영속 캐시 (확정 과거일 전용) ────────────────────
+# data/cache/timeseries/khoa/{obs_post_id}/{YYYYMMDD}.json — fetch_oceangrid_day() 의 병합
+# 결과(리스트) 그대로. 과거 관측은 바뀌지 않으므로 사실상 무기한 유효, 재시작해도 남아있어
+# "콜드 로드"를 없앤다. §_is_confirmed_past 참고 — 당일을 포함하는 창은 여기 쓰지 않는다.
+_TS_DISK_CACHE_DIR = Path(__file__).resolve().parent.parent / "data" / "cache" / "timeseries" / "khoa"
 
 # ── 인메모리 캐시 + throttle ─────────────────────────────────────────────────
 _CACHE: dict = {}
@@ -280,6 +291,66 @@ def fetch_noon_wave(obs_code: str) -> list[dict]:
 # 단일 호출은 `searchDate` 기준 전날~당일 약 2일 창(15~30분 간격)만 반환하고, `searchKey`/기간
 # 파라미터로 창을 넓힐 수 없다(docs/oceangrid_probe.md §4.8 실측) — 장기 이력은 날짜를 이틀씩
 # 건너뛰며 반복호출 후 obs_time 기준으로 병합하는 수밖에 없다.
+#
+# 성능(2026-07-20 개선): (a) 확정 과거일(아래 `_is_confirmed_past`)은 병합 결과를 디스크에 영속해
+# 재시작 후에도, 시간이 지나도 재호출하지 않는다(§_TS_DISK_CACHE_DIR). (b) `fetch_oceangrid_range`
+# 의 day-loop 는 디스크/메모리 캐시 미스인 날짜만 바운드 동시성(`_OCEANGRID_EXECUTOR`)으로 동시
+# 조회한다 — 총 호출 수는 순차 버전과 동일, 벽시계 시간만 단축.
+
+_OCEANGRID_MAX_WORKERS = 6  # 동시성 상한 — 무제한 병렬 금지, 정중함은 이 상한이 대신 지킨다(아래 참고)
+_OCEANGRID_EXECUTOR = concurrent.futures.ThreadPoolExecutor(
+    max_workers=_OCEANGRID_MAX_WORKERS, thread_name_prefix="khoa-oceangrid",
+)
+
+
+def _is_confirmed_past(search_date: str) -> bool:
+    """search_date(YYYYMMDD)의 2일 창(전날 00:00~당일 23:30)이 완전히 과거인지, 즉
+    `search_date < 오늘(KST)`. 오늘을 포함하는 창은 아직 갱신 중이므로 디스크 영속 대상이 아니다
+    (인메모리 `_TTL_OCEANGRID` 단기 TTL만 적용) — 오늘 데이터가 과거일 캐시로 굳는 것을 막는다."""
+    try:
+        d = datetime.strptime(search_date, "%Y%m%d").date()
+    except ValueError:
+        return False
+    return d < kma_marine.now_kst().date()
+
+
+def _oceangrid_disk_path(obs_post_id: str, search_date: str) -> Path:
+    return _TS_DISK_CACHE_DIR / obs_post_id / f"{search_date}.json"
+
+
+def _load_oceangrid_disk(obs_post_id: str, search_date: str) -> Optional[list[dict]]:
+    """확정 과거일 디스크 캐시 읽기. 파일없음/손상은 조용히 미스(None) 처리해 재조회·재저장으로
+    자가복구한다(오염된 캐시를 계속 신뢰하지 않음)."""
+    path = _oceangrid_disk_path(obs_post_id, search_date)
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        return None
+    return data if isinstance(data, list) else None
+
+
+def _save_oceangrid_disk(obs_post_id: str, search_date: str, rows: list[dict]) -> None:
+    """확정 과거일 병합 결과 영속(원자적 쓰기: 같은 디렉터리에 tmp 파일 후 os.replace — 동시에 같은
+    날짜를 조회하는 다른 스레드/요청과 겹쳐도 부분쓰기 파일이 보이지 않는다). 쓰기 실패는 조용히
+    무시(응답 자체는 이미 조립됨, 다음 호출에서 재시도)."""
+    path = _oceangrid_disk_path(obs_post_id, search_date)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fd, tmp = tempfile.mkstemp(dir=str(path.parent), suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                json.dump(rows, f, ensure_ascii=False)
+            os.replace(tmp, path)
+        finally:
+            if os.path.exists(tmp):
+                try:
+                    os.remove(tmp)
+                except OSError:
+                    pass
+    except OSError:
+        pass
+
 
 def _ocean_num(v) -> Optional[float]:
     """oceangrid 응답값(문자열/숫자 혼재, 결측은 보통 빈 문자열/None) → float|None."""
@@ -293,7 +364,12 @@ def _ocean_num(v) -> Optional[float]:
 
 def _oceangrid_post(url: str, obs_post_id: str, search_date: str) -> Optional[dict]:
     """oceangrid 비공식 GIS 차트 JSON POST(인증 불요, 세션/Referer 불필요 — docs/oceangrid_probe.md
-    §6 실측 확인). HTTP!=200/JSON 파싱 실패는 캐시하지 않음(자가복구)."""
+    §6 실측 확인). HTTP!=200/JSON 파싱 실패는 캐시하지 않음(자가복구).
+
+    ⚠️ 전역 `_throttle()`(순차 스로틀)을 의도적으로 쓰지 않는다 — 이 함수의 유일한 호출 경로인
+    `fetch_oceangrid_day`/`fetch_oceangrid_range` 가 `_OCEANGRID_EXECUTOR`(동시성 상한
+    `_OCEANGRID_MAX_WORKERS`=6)를 통해서만 호출되므로, 전역 순차 대기 대신 **동시 연결 수 상한**이
+    버스트 방지 역할을 대신한다(순차 스로틀은 병렬 day-loop와 충돌해 병렬화 효과를 무효화한다)."""
     cache_key = ("oceangrid", url, obs_post_id, search_date)
     now = time.time()
     with _CACHE_LOCK:
@@ -302,7 +378,6 @@ def _oceangrid_post(url: str, obs_post_id: str, search_date: str) -> Optional[di
             return hit[1]
 
     try:
-        _throttle()
         resp = requests.post(
             url,
             data={
@@ -336,7 +411,18 @@ def fetch_oceangrid_day(obs_post_id: str, search_date: str) -> list[dict]:
     """관측소의 (전날~당일) 2일 창 병합 레코드: {t, wave, wave_period, wind_speed, wind_dir,
     water_temp, air_temp, pressure} — 파고/기온기압/수온/풍향풍속 4개 항목 엔드포인트를
     `obs_time` 기준으로 병합한다(조위/시정/염분은 부이엔 없어 미조회 — oceangrid_probe.md §4.6/4.7).
-    search_date: "YYYYMMDD". 실패/데이터없음이면 빈 리스트."""
+    search_date: "YYYYMMDD". 실패/데이터없음이면 빈 리스트.
+
+    확정 과거일(`_is_confirmed_past`)이면 디스크 캐시를 먼저 확인해 히트 시 네트워크 호출을 전부
+    건너뛴다. 미스면 평소대로 4개 엔드포인트를 조회하고, 확정 과거일이면서 **4개 모두 성공**(HTTP+
+    JSON 정상 — 일부라도 실패하면 손상/부분 응답으로 보고 디스크에 쓰지 않는다)했을 때만 병합 결과를
+    디스크에 영속한다."""
+    confirmed_past = _is_confirmed_past(search_date)
+    if confirmed_past:
+        disk_rows = _load_oceangrid_disk(obs_post_id, search_date)
+        if disk_rows is not None:
+            return disk_rows
+
     merged: dict[str, dict] = {}
 
     def _put(t: Optional[str], **kv) -> None:
@@ -373,22 +459,48 @@ def fetch_oceangrid_day(obs_post_id: str, search_date: str) -> list[dict]:
                 wind_dir=_ocean_num(r.get("obs_wdir")),
             )
 
-    return sorted(merged.values(), key=lambda r: r["t"])
+    rows = sorted(merged.values(), key=lambda r: r["t"])
+
+    if confirmed_past and wave is not None and air is not None and wtsl is not None and wind is not None:
+        _save_oceangrid_disk(obs_post_id, search_date, rows)
+
+    return rows
+
+
+def _range_search_dates(start_date: date, end_date: date) -> list[str]:
+    """`fetch_oceangrid_range` 가 조회할 searchDate(YYYYMMDD) 목록 — 기존 순차 2일 스텝 loop 와
+    정확히 동일한 날짜 집합(마지막 창이 end_date 를 건너뛰면 보정 호출 포함)을 만든다. 순서는
+    상관없다(병렬 조회 후 obs_time 기준으로 재정렬하므로)."""
+    dates: list[date] = []
+    d = start_date
+    step = timedelta(days=2)
+    while d <= end_date:
+        dates.append(d)
+        d += step
+    # 마지막 창이 end_date 를 건너뛸 수 있어(2일 스텝) 보정 호출로 확실히 포함시킴.
+    if d - step < end_date:
+        dates.append(end_date)
+    return [x.strftime("%Y%m%d") for x in dates]
 
 
 def fetch_oceangrid_range(obs_post_id: str, start_date: date, end_date: date) -> list[dict]:
     """start_date~end_date(KST 기준 날짜) 사이를 2일 간격 day-loop 로 순회해 조립한 병합 시계열.
-    호출부(timeseries.py)가 범위를 ~30일로 캡핑해 호출량을 관리한다(응답성 확보, Fix 2)."""
+    호출부(timeseries.py)가 범위를 ~30일로 캡핑해 호출량을 관리한다(응답성 확보, Fix 2).
+
+    성능(2026-07-20): 순회할 날짜 목록은 기존과 동일(`_range_search_dates`, 호출 수 불변) —
+    다만 각 날짜의 `fetch_oceangrid_day` 조회를 `_OCEANGRID_EXECUTOR`(바운드 동시성, 최대
+    `_OCEANGRID_MAX_WORKERS`=6)로 동시에 실행한다. 디스크/메모리 캐시 히트인 날짜는 사실상 즉시
+    반환되고, 미스인 날짜만 실제로 네트워크를 탄다 — 콜드 로드의 벽시계 시간만 줄어들 뿐 외부
+    호출 총량은 그대로다."""
+    dates = _range_search_dates(start_date, end_date)
     merged: dict[str, dict] = {}
-    d = start_date
-    step = timedelta(days=2)
-    while d <= end_date:
-        for rec in fetch_oceangrid_day(obs_post_id, d.strftime("%Y%m%d")):
-            merged[rec["t"]] = rec
-        d += step
-    # 마지막 창이 end_date 를 건너뛸 수 있어(2일 스텝) 보정 호출로 확실히 포함시킴.
-    if d - step < end_date:
-        for rec in fetch_oceangrid_day(obs_post_id, end_date.strftime("%Y%m%d")):
+    futures = {_OCEANGRID_EXECUTOR.submit(fetch_oceangrid_day, obs_post_id, d): d for d in dates}
+    for fut in concurrent.futures.as_completed(futures):
+        try:
+            day_rows = fut.result()
+        except Exception:
+            continue  # 개별 날짜 실패는 건너뛰고 나머지로 최선껏 조립(자가복구, 기존 방침과 동일)
+        for rec in day_rows:
             merged[rec["t"]] = rec
     return sorted(merged.values(), key=lambda r: r["t"])
 
