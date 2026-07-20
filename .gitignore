@@ -34,3 +34,7 @@ docs/ui_revision_notes.md
 .DS_Store
 .vscode/
 *.swp
+
+# ── 발표자료 대용량 영상 (GitHub 100MB 한도 초과 — 서버 배포본에만 존재) ──
+presentation/web/assets/cover_buoy_loop_10s.mp4
+presentation/logs/

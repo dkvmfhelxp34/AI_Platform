@@ -1,0 +1,804 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>부이 자료 통합관리 서비스 | GeoSR</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="지오시스템리서치 — 부이 자료 통합관리 및 유지관리 플랫폼 발표자료">
+<style>
+@font-face { font-family:'Pretendard'; font-weight:400; font-style:normal;
+  src:url(assets/pretendard-400.woff2) format('woff2'); }
+@font-face { font-family:'Pretendard'; font-weight:600; font-style:normal;
+  src:url(assets/pretendard-600.woff2) format('woff2'); }
+@font-face { font-family:'Pretendard'; font-weight:700; font-style:normal;
+  src:url(assets/pretendard-700.woff2) format('woff2'); }
+
+/* 팔레트: 잉크 #16283C · 본문 #3A4A5C · 뮤트 #7A8797 · 포인트 #1D5FD1 · 헤어라인 #E3E8EE */
+* { margin:0; padding:0; box-sizing:border-box; }
+html,body { width:100%; height:100%; background:#171B21; overflow:hidden;
+  font-family:'Pretendard',"Malgun Gothic","맑은 고딕","Apple SD Gothic Neo",sans-serif;
+  word-break:keep-all; }
+#stage { position:absolute; width:1920px; height:1080px; top:50%; left:50%;
+  transform-origin:center center; background:#F7F8FA; }
+.slide { position:absolute; inset:0; width:1920px; height:1080px;
+  background:#F7F8FA; color:#3A4A5C; display:none; overflow:hidden; }
+.slide.on { display:block; }
+
+/* ---------- 공통 프레임 ---------- */
+.head { position:absolute; top:0; left:0; right:0; height:150px;
+  display:flex; justify-content:space-between; align-items:center;
+  padding:8px 96px 0 96px; border-bottom:1px solid #E3E8EE; background:#F7F8FA; }
+.kicker { font-size:15px; font-weight:600; color:#1D5FD1; letter-spacing:5px; margin-bottom:12px; }
+.title { font-size:39px; font-weight:700; color:#16283C; letter-spacing:-.5px; }
+.subtitle { font-size:22px; font-weight:400; color:#7A8797; letter-spacing:0; margin-left:22px;
+  padding-left:22px; border-left:1px solid #C6CFDA; }
+.malgun-subtitle { font-family:"Malgun Gothic","맑은 고딕",sans-serif; }
+.logo { width:200px; height:86px; background-image:url('assets/logo_head.png');
+  background-size:contain; background-repeat:no-repeat; background-position:right center; }
+.content { position:absolute; top:150px; bottom:48px; left:0; right:0;
+  padding:28px 96px 22px 96px; display:flex; flex-direction:column; min-height:0; }
+.foot { position:absolute; left:0; bottom:0; width:1920px; height:48px;
+  border-top:1px solid #E3E8EE; background:#F7F8FA; color:#9AA5B1; font-size:15px;
+  line-height:47px; padding:0 96px; display:flex; justify-content:space-between;
+  letter-spacing:.5px; }
+.foot .pg { display:none; }
+
+/* ---------- 오버뷰 스트립 / 불릿 ---------- */
+.tags { margin-bottom:24px; }
+.tag-row { display:flex; align-items:center; margin-bottom:11px; }
+.tag { flex:0 0 108px; text-align:center; background:#fff; color:#1D5FD1;
+  border:1px solid rgba(29,95,209,.35); font-size:18px; font-weight:600;
+  border-radius:999px; padding:5px 0; margin-right:20px; }
+.tag-txt { font-size:23px; color:#3A4A5C; }
+.bullets { margin:0 0 22px 4px; list-style:none; }
+.bullets li { font-size:23px; color:#3A4A5C; line-height:1.6; margin-bottom:8px;
+  padding-left:24px; position:relative; }
+.bullets li::before { content:"▸"; position:absolute; left:0; color:#1D5FD1; }
+.bullets em, .banner b, .tag-txt em { font-style:normal; color:#1D5FD1; font-weight:700; }
+.banner { background:#EDF3FC; border-left:3px solid #1D5FD1; color:#26374A;
+  font-size:24px; padding:15px 26px; margin-bottom:24px; border-radius:0 12px 12px 0; }
+.banner.check { margin:18px 0 0 0; text-align:center; border-radius:12px; border-left:none;
+  border:1px solid rgba(29,95,209,.25); font-size:26px; }
+
+/* ---------- 카드 / 그리드 ---------- */
+.cols { display:grid; gap:26px; min-height:0; }
+.rows { display:flex; flex-direction:column; gap:22px; min-height:0; }
+.card { background:#fff; border:1px solid #E3E8EE; border-radius:16px;
+  padding:22px 30px; display:flex; flex-direction:column; min-height:0;
+  box-shadow:0 1px 2px rgba(22,40,60,.04); }
+.card-h { font-size:22px; font-weight:700; color:#16283C; margin-bottom:16px;
+  display:flex; align-items:center; align-self:stretch; letter-spacing:-.3px; }
+.card-h::before { content:""; flex:0 0 18px; width:18px; height:18px;
+  border:5px solid #1D6FEA; border-radius:50%; background:transparent;
+  margin-right:14px; box-shadow:0 0 0 4px rgba(29,111,234,.10), 0 0 18px rgba(29,111,234,.58);
+  animation:ringGlow 1.9s ease-in-out infinite; }
+@keyframes ringGlow {
+  0%,100% { box-shadow:0 0 0 4px rgba(29,111,234,.10), 0 0 16px rgba(29,111,234,.48); transform:scale(.96); }
+  50% { box-shadow:0 0 0 7px rgba(29,111,234,.18), 0 0 26px rgba(29,111,234,.78); transform:scale(1.04); }
+}
+.mini-h { font-size:19px; font-weight:700; color:#16283C; margin-bottom:10px; }
+.note { font-size:17px; color:#7A8797; margin-top:12px; line-height:1.55; }
+.legend { font-size:16px; color:#7A8797; font-weight:400; margin-left:auto; }
+.sw { display:inline-block; width:26px; height:7px; border-radius:4px; margin:0 6px 2px 12px; }
+.sw.b { background:#1D5FD1; } .sw.g { background:#2E7D46; }
+.sw.past { background:#D6E2F0; } .sw.fut { background:repeating-linear-gradient(45deg,#F3B879,#F3B879 5px,#FBE4C8 5px,#FBE4C8 10px); }
+
+/* ---------- 표 ----------
+   통일 규칙: 가장 왼쪽 설명 열만 파란색 볼드, 헤더는 잉크 볼드 + 회색 틴트,
+   값은 검정/회색 (개선값은 볼드 잉크). rowspan으로 첫 칸이 왼쪽 열이 아닌
+   행은 tr.sub 로 예외 처리. */
+.tbl { border-collapse:collapse; font-size:20px; }
+.tbl th,.tbl td { border:1px solid #E9EDF2; padding:10px 16px; text-align:center; color:#3A4A5C; }
+.tbl th { background:#F2F4F7; color:#16283C; font-weight:700; border-bottom:2px solid #D4DAE2; }
+.tbl th.acc { background:#F2F4F7; color:#16283C; border-bottom-color:#D4DAE2; }
+.tbl tr:nth-child(even) td { background:#FBFCFD; }
+.tbl td.acc { background:transparent; font-weight:700; }
+.tbl td.up { font-weight:700; color:#16283C; }
+.tbl td.hit { background:#F2F4F7; }
+.tbl td span { display:block; font-size:15px; color:#7A8797; font-weight:400; }
+.tbl tr > th:first-child, .tbl tr > td:first-child { color:#1D5FD1; font-weight:700; }
+.tbl tr.sub > th:first-child, .tbl tr.sub > td:first-child { color:#16283C; }
+.tbl tr.sub > td:first-child { font-weight:400; }
+.tbl.left td { text-align:left; }
+.tbl td.left { text-align:left; }
+.tbl.small { font-size:18px; }
+.tbl.small th,.tbl.small td { padding:8px 12px; }
+.tbl.small th { white-space:nowrap; }
+.vcenter { flex:1; display:flex; flex-direction:column; justify-content:center; min-height:0; }
+.dim { color:#9AA5B1; font-size:.85em; font-weight:400; }
+
+/* ---------- 흐름 다이어그램 ---------- */
+.vflow { display:flex; flex-direction:column; align-items:stretch; flex:1; justify-content:center; }
+.vstep { background:#F4F7FB; border:1px solid #DCE4EE; border-radius:10px;
+  text-align:center; font-size:20px; font-weight:600; color:#16283C; padding:10px 8px; }
+.varrow { text-align:center; color:#1D5FD1; font-size:14px; line-height:1.5; }
+.colarrow { align-self:center; color:#1D5FD1; font-size:24px; }
+.chips { display:flex; flex-wrap:wrap; align-items:center; gap:9px; }
+.chips .cstep { background:#F4F7FB; border:1px solid #DCE4EE; border-radius:8px;
+  padding:6px 14px; font-size:18px; font-weight:600; color:#16283C; }
+.chips .carr { color:#1D5FD1; font-size:13px; }
+.metric { display:flex; align-items:baseline; font-size:19px; color:#3A4A5C;
+  margin-bottom:10px; line-height:1.5; }
+.metric b { flex:0 0 150px; color:#1D5FD1; font-size:19px; }
+
+/* ---------- 로드맵 ---------- */
+.roadmap { display:flex; flex-direction:column; justify-content:space-evenly; flex:1; min-height:0; }
+.hrow { display:flex; align-items:center; }
+.hlabel { flex:0 0 150px; background:#16283C; color:#fff; border-radius:9px;
+  font-size:19px; font-weight:600; text-align:center; padding:9px 0; margin-right:18px;
+  letter-spacing:.5px; }
+.hstage { flex:1; background:#fff; border:1px solid #DCE4EE; border-radius:9px;
+  padding:5px 14px; }
+.hstage b { display:block; font-size:18px; color:#1D5FD1; font-weight:700; }
+.hstage span { font-size:16px; color:#5A6A7C; }
+.harrow { color:#B8C4D2; font-size:15px; margin:0 8px; }
+
+/* ---------- 그림 ---------- */
+.fig { max-width:100%; max-height:100%; object-fit:contain; min-height:0;
+  border:none; border-radius:0; background:transparent; padding:0; box-shadow:none; }
+.figrow { display:flex; gap:24px; flex:1; min-height:0; align-items:center; justify-content:center; }
+.figrow figure { flex:1; min-width:0; display:flex; flex-direction:column; align-items:center; min-height:0; }
+.figrow img { max-width:100%; max-height:100%; object-fit:contain; min-height:0;
+  border:none; border-radius:0; background:transparent; padding:0; box-shadow:none; }
+.figrow figcaption { font-size:18px; color:#16283C; font-weight:600; margin-top:10px; }
+.orgchart-wrap { flex:1; width:100%; min-height:0; display:flex; align-items:center; justify-content:center; }
+.orgchart-wrap .fig { flex:1; width:100%; min-height:0; }
+/* 매출 차트: 좌→우 리빌 + 살짝 떠오르는 상승 연출 (슬라이드 진입 시마다 재생) */
+.rise-reveal { animation:riseReveal 2s cubic-bezier(.25,.6,.3,1) .2s both; }
+@keyframes riseReveal {
+  from { clip-path:inset(0 100% 0 0); transform:translateY(14px); opacity:.3; }
+  to { clip-path:inset(0 0 0 0); transform:translateY(0); opacity:1; }
+}
+/* 라이브 데모 iframe: 실제 대시보드를 슬라이드 안에서 축소 임베드 */
+.demo-wrap { flex:1; min-height:0; position:relative; overflow:hidden;
+  border:1px solid #E3E8EE; border-radius:12px; background:#fff; }
+.demo-frame { position:absolute; top:0; left:0; width:125%; height:125%;
+  border:0; transform:scale(.8); transform-origin:top left; background:#fff; }
+.demo-url { display:inline-flex; align-items:center; gap:8px; margin-left:14px;
+  font-size:15px; font-weight:600; color:#1D5FD1; background:#EDF3FC;
+  border:1px solid rgba(29,95,209,.25); border-radius:999px; padding:4px 14px; letter-spacing:0; }
+.demo-url::before { content:""; width:8px; height:8px; border-radius:50%; background:#2E9E5B;
+  box-shadow:0 0 0 3px rgba(46,158,91,.18); animation:liveDot 1.6s ease-in-out infinite; }
+@keyframes liveDot { 0%,100% { opacity:1; } 50% { opacity:.35; } }
+/* 조직도 강조: aspect-ratio 래퍼로 이미지 실제 표시 영역과 % 좌표를 일치시킴 */
+.org-hl-wrap { position:relative; height:100%; max-width:100%; aspect-ratio:1351/513; }
+.org-hl-wrap .fig { width:100%; height:100%; }
+.org-hl { position:absolute; left:1.4%; top:70%; width:18.2%; height:29%;
+  border:3px solid #1D5FD1; border-radius:12px; background:rgba(29,95,209,.07);
+  pointer-events:none; animation:hlPulse 1.9s ease-in-out infinite; }
+@keyframes hlPulse {
+  0%,100% { box-shadow:0 0 0 3px rgba(29,95,209,.10), 0 0 14px rgba(29,95,209,.35); }
+  50% { box-shadow:0 0 0 6px rgba(29,95,209,.20), 0 0 24px rgba(29,95,209,.65); }
+}
+.work-list { position:relative; flex:1; min-height:0; background:url('assets/work_items_bg.png') center/100% 100% no-repeat; }
+.work-item { position:absolute; left:168px; right:190px; height:17.5%; display:flex; flex-direction:column; justify-content:center; }
+.work-item:nth-child(1) { top:2.8%; }
+.work-item:nth-child(2) { top:23.0%; }
+.work-item:nth-child(3) { top:43.2%; }
+.work-item:nth-child(4) { top:63.4%; }
+.work-item:nth-child(5) { top:83.6%; }
+.work-icon, .work-divider, .work-art { display:none; }
+.work-title { font-size:25px; font-weight:800; color:#0757B8; margin-bottom:6px; letter-spacing:-.8px; }
+.work-title::after { content:""; display:block; width:44px; height:3px; margin-top:5px; background:#1D6FEA; border-radius:2px; }
+.work-desc { font-size:16.5px; color:#26374A; line-height:1.38; word-break:keep-all; max-width:420px; }
+.partner-box { flex:1; align-self:stretch; display:flex; align-items:center; justify-content:center; min-height:0; }
+.partner-img { width:100%; height:100%; object-fit:contain; min-height:0; }
+/* 함께 일하는 기관: 기관 그룹별 제목 라벨 + 로고 이미지 */
+.inst-group { flex:1; min-height:0; align-self:stretch; display:flex; flex-direction:column; gap:14px; }
+.inst-group + .inst-group { margin-top:20px; padding-top:20px; border-top:1px dashed #D4DAE2; }
+.inst-h { display:inline-flex; align-items:center; gap:10px; align-self:flex-start;
+  background:#EDF3FC; color:#1D5FD1; font-size:18px; font-weight:700; letter-spacing:-.2px;
+  border:1px solid rgba(29,95,209,.28); border-radius:999px; padding:7px 22px; }
+.inst-h::before { content:""; width:8px; height:8px; border-radius:50%; background:#1D5FD1;
+  box-shadow:0 0 0 3px rgba(29,95,209,.15); }
+.inst-imgbox { flex:1; min-height:0; display:flex; align-items:center; justify-content:center; }
+.inst-imgbox img { max-width:86%; max-height:100%; object-fit:contain; min-height:0; }
+.work-full-img { flex:1; width:100%; min-height:0; object-fit:contain; }
+.fullbg { position:absolute; inset:0; width:1920px; height:1080px; object-fit:contain; background:#fff; }
+
+/* ---------- 입력 시퀀스 ---------- */
+.seq { flex:1; display:flex; flex-direction:column; justify-content:center; }
+.seq-legend { font-size:17px; color:#7A8797; margin-bottom:16px; }
+.seq-row { display:flex; align-items:center; margin-bottom:14px; }
+.seq-row span { flex:0 0 140px; font-size:18px; font-weight:600; color:#16283C; }
+.seq-row .bar { flex:1; height:30px; background:#fff; border:1px solid #DCE4EE; border-radius:6px; position:relative; overflow:hidden; }
+.seq-row .bar::after { content:""; position:absolute; left:50%; top:0; bottom:0;
+  border-left:2px dashed rgba(196,61,61,.65); transform:translateX(-1px); }
+.seq-row .past { position:absolute; left:0; top:0; bottom:0; background:#D6E2F0; }
+.seq-row .fut { position:absolute; top:0; bottom:0;
+  background:repeating-linear-gradient(45deg,#F3B879,#F3B879 6px,#FBE4C8 6px,#FBE4C8 12px); }
+.seq-axis { display:flex; justify-content:space-between; margin-left:140px; font-size:16px; color:#7A8797; }
+.seq-axis .now { color:#C43D3D; font-weight:700; }
+
+/* ---------- 회사 소개 ---------- */
+.info-grid { display:grid; grid-template-columns:150px 1fr; row-gap:13px; column-gap:16px; }
+.info-grid .k { font-size:21px; font-weight:700; color:#16283C; }
+.info-grid .v { font-size:21px; color:#3A4A5C; }
+
+/* ---------- 표지 (부표 라인 해양 실사 + Ken Burns + 등장 애니메이션) ---------- */
+.cover { background:#000; overflow:hidden; }
+.cover-bg { position:absolute; inset:0; width:1920px; height:1080px; object-fit:cover;
+  object-position:28% 44%; }
+.cover::after { content:""; position:absolute; inset:0;
+  background:linear-gradient(90deg, rgba(255,255,255,0) 0%, rgba(255,255,255,.18) 36%, rgba(255,255,255,.84) 57%, rgba(255,255,255,.98) 100%); }
+.cover-box { position:absolute; z-index:1; left:1210px; right:120px; top:320px; text-align:left; }
+.cover-sub1 { display:flex; align-items:flex-end; gap:6px; white-space:nowrap;
+  font-size:21px; color:#0B4FB8; font-weight:700; letter-spacing:0; margin:18px 0 20px;
+  line-height:1; font-family:"Malgun Gothic","맑은 고딕",sans-serif;
+  text-shadow:none;
+  animation:rise .8s cubic-bezier(.16,1,.3,1) both; }
+.cover-sub1 b { display:block; font:inherit; font-weight:700; color:#10233D; line-height:1; transform:translateY(2px); }
+.cover h1 { position:relative; z-index:0; display:inline-block; min-width:0; box-sizing:border-box;
+  font-size:88px; color:#10233D; font-weight:800; letter-spacing:-2px; line-height:1.22;
+  padding:28px 0 22px; text-shadow:none;
+  animation:rise .8s cubic-bezier(.16,1,.3,1) .14s both; }
+.cover h1::before { content:""; position:absolute; z-index:-1; inset:-20px -42px;
+  background:transparent;
+  border-radius:36px; }
+.typing-text { white-space:pre-line; }
+.typing-cursor { display:inline-block; margin-left:10px; color:#10233D; font-weight:800;
+  animation:typingCursorBlink .45s steps(1,end) infinite; }
+@keyframes typingCursorBlink { 0%,49% { opacity:1; } 50%,100% { opacity:0; } }
+.cover-line { display:block; width:68px; height:4px; background:#0B4FB8; margin:0 0 28px 0; border-radius:2px;
+  animation:rise .8s cubic-bezier(.16,1,.3,1) .28s both; }
+.cover-meta { margin-top:0; font-size:21px; color:#7D8794; font-weight:800; letter-spacing:1px;
+  text-shadow:none;
+  animation:rise .8s cubic-bezier(.16,1,.3,1) .42s both; }
+@keyframes rise { from { opacity:0; transform:translateY(28px); } to { opacity:1; transform:translateY(0); } }
+.cover-logo { position:absolute; z-index:1; right:112px; bottom:78px; width:250px; border:none;
+  background:transparent; padding:0; border-radius:0; box-shadow:none;
+  filter:drop-shadow(0 10px 18px rgba(0,0,0,.34)) drop-shadow(0 1px 2px rgba(255,255,255,.5));
+  animation:rise .8s cubic-bezier(.16,1,.3,1) .56s both; }
+
+/* ---------- 챕터 표지 ---------- */
+.chapter { background:#F8FBFE url('assets/chapter_ocean_globe_bg.png') center/cover no-repeat; }
+.chapter::before { content:""; position:absolute; inset:0;
+  background:linear-gradient(90deg, rgba(255,255,255,.96) 0%, rgba(255,255,255,.82) 38%, rgba(255,255,255,.12) 72%, rgba(255,255,255,0) 100%); }
+.ch-no { position:absolute; left:96px; top:132px; font-size:270px; font-weight:800;
+  color:transparent; line-height:.9; letter-spacing:-14px;
+  background:linear-gradient(135deg, rgba(17,43,68,.95), rgba(23,113,174,.46)), url('assets/chapter_ocean_globe_bg.png') 50% 62%/cover;
+  -webkit-background-clip:text; background-clip:text;
+  filter:drop-shadow(0 18px 16px rgba(19,55,83,.22)); }
+.ch-title { position:absolute; left:100px; top:474px; max-width:900px; font-size:78px; font-weight:800;
+  color:#14283B; letter-spacing:-2px; line-height:1.15; word-break:keep-all; }
+.ch-line { position:absolute; left:104px; top:630px; width:68px; right:auto;
+  border-top:4px solid #176BE6; opacity:1; }
+.ch-sub { position:absolute; left:104px; bottom:auto; top:674px; font-size:27px; color:#7A8797;
+  font-weight:700; letter-spacing:1px; }
+.ch-corp { position:absolute; left:96px; bottom:72px; font-size:17px; color:#8E9AA7;
+  font-weight:700; letter-spacing:.3px; }
+
+/* ---------- 내비게이션 UI ---------- */
+.navbtn { position:fixed; bottom:6px; z-index:10; width:40px; height:40px; border-radius:50%;
+  border:1px solid rgba(255,255,255,.25); background:rgba(22,40,60,.35); color:#fff;
+  font-size:17px; cursor:pointer; }
+.navbtn:hover { background:#1D5FD1; border-color:#1D5FD1; }
+#prev { left:calc(50% - 100px); } #next { left:calc(50% + 60px); }
+#counter { position:fixed; left:50%; transform:translateX(-50%); bottom:6px; z-index:10; height:40px;
+  display:flex; align-items:center; color:#fff; background:rgba(22,40,60,.6);
+  padding:0 18px; border-radius:20px; font-size:18px; font-weight:600; letter-spacing:1px; }
+
+/* ---------- 웹 배포용 모션 ---------- */
+#pbar { position:fixed; top:0; left:0; height:4px; width:0; z-index:20;
+  background:linear-gradient(90deg,#1D5FD1,#6FA8FF); border-radius:0 3px 3px 0;
+  transition:width .4s cubic-bezier(.16,1,.3,1); }
+.slide.on { animation:slideIn .5s cubic-bezier(.16,1,.3,1); }
+@keyframes slideIn { from { opacity:0; } to { opacity:1; } }
+.slide.on .content > * { animation:rise2 .55s cubic-bezier(.16,1,.3,1) both; }
+.slide.on .content > *:nth-child(2) { animation-delay:.09s; }
+.slide.on .content > *:nth-child(3) { animation-delay:.18s; }
+.slide.on .content > *:nth-child(4) { animation-delay:.27s; }
+@keyframes rise2 { from { opacity:0; transform:translateY(22px); } to { opacity:1; transform:none; } }
+.slide.on .ch-no, .slide.on .ch-title, .slide.on .ch-line, .slide.on .ch-sub {
+  animation:rise2 .6s cubic-bezier(.16,1,.3,1) both; }
+.slide.on .ch-title { animation-delay:.1s; }
+.slide.on .ch-line { animation-delay:.22s; }
+.slide.on .ch-sub { animation-delay:.32s; }
+.navbtn { transition:transform .2s, background .2s, border-color .2s; }
+.navbtn:hover { transform:scale(1.12); }
+</style>
+</head>
+<body>
+<div id="stage">
+
+<section class="slide cover">
+  <video class="cover-bg" autoplay muted loop playsinline>
+    <source src="assets/cover_buoy_loop_10s.mp4" type="video/mp4">
+  </video>
+  <div class="cover-box">
+    <div class="cover-sub1">부이 자료 관리·활용·서비스까지, <b>지오시스템리서치가 함께합니다</b></div>
+    <h1 class="typing-title" data-text="부이 자료&#10;통합관리 서비스"><span class="typing-text"></span><span class="typing-cursor" aria-hidden="true">|</span></h1>
+    <div class="cover-line"></div>
+    <div class="cover-meta">2026.XX.XX.(X) &nbsp;|&nbsp; 최흥배</div>
+  </div>
+  <img class="cover-logo" src="assets/geosr_logo_cover.png" alt="GeoSR">
+</section>
+
+<section class="slide chapter">
+  <div class="ch-no">01</div>
+  <div class="ch-title">지오시스템리서치 소개</div>
+  <div class="ch-line"></div>
+  <div class="ch-sub">해양분야 전문기업</div>
+  <div class="ch-corp">GeoSystem Research Corporation</div>
+</section>
+
+<section class="slide">
+  <div class="head">
+    <div>
+      <div class="kicker">지오시스템리서치 소개</div>
+      <div class="title">회사 개요<span class="subtitle">해양, 위성, 수치모델, AI 분야의 전문인력 보유</span></div>
+    </div>
+    <div class="logo"></div>
+  </div>
+  <div class="content">
+<div class="cols" style="grid-template-columns:460px 1fr">
+  <div class="card" style="align-items:center"><div class="card-h">사업장</div><img class="fig" style="flex:1;width:100%;min-height:0" src="assets/map_korea.png" alt="map_korea">
+<div style="margin-top:16px;align-self:stretch">
+ <div style="font-size:13.5px;letter-spacing:-.2px;white-space:nowrap;color:#3A4A5C;margin-bottom:7px"><b style="color:#1E88D2">● 본사</b> : 경기도 군포시 엘에스로 172, 306호</div>
+ <div style="font-size:13.5px;letter-spacing:-.2px;white-space:nowrap;color:#3A4A5C"><b style="color:#27AE60">● 부산사무소</b> : 부산광역시 해운대구 세실로69번길 24, 5층</div>
+</div></div>
+  <div class="rows">
+    <div class="card" style="flex:0 0 auto"><div class="card-h">회사 개요</div>
+<div class="info-grid">
+ <div class="k">회사명</div><div class="v">(주)지오시스템리서치</div>
+ <div class="k">대표이사</div><div class="v">김기연</div>
+ <div class="k">설립일</div><div class="v">2000년 7월 4일</div>
+ <div class="k">임직원 수</div><div class="v">190명 <span class="dim">(26년 1월 기준)</span> · 석사 53 · 박사수료 11 · 박사 24 · 기술사 13</div>
+ <div class="k">사업분야</div><div class="v">하천, 연안, 해양 등 수환경 엔지니어링 솔루션</div>
+ <div class="k">홈페이지</div><div class="v">www.geosr.com</div>
+</div></div>
+    <div class="card" style="flex:1;align-items:center"><div class="card-h">기업조직구성</div><div class="orgchart-wrap"><div class="org-hl-wrap"><img class="fig" src="assets/orgchart_replacement.png" alt="orgchart"><div class="org-hl"></div></div></div></div>
+  </div>
+</div></div>
+  <div class="foot"><span>GeoSystem Research Corporation</span><span class="pg"></span></div>
+</section>
+
+<section class="slide">
+  <div class="head">
+    <div>
+      <div class="kicker">지오시스템리서치 소개 (예보사업부)</div>
+      <div class="title">예보사업부<span class="subtitle">전문 분야</span></div>
+    </div>
+    <div class="logo"></div>
+  </div>
+  <div class="content"><div class="banner">부이자료, 위성자료, 수치모델, AI를 이용한 <b>해양 예측시스템</b>을 운영하고 있으며, 각종 해양현상(수위, 유동, 수온, 파랑 등)을 예측함</div><div class="cols" style="grid-template-columns:1fr 1fr;flex:1">
+  <div class="card" style=""><div class="card-h">주요 업무</div><img class="work-full-img" src="assets/work_items_full.png" alt="주요 업무"></div>
+  <div class="card" style="padding:22px 30px"><div class="card-h">함께 일하는 기관</div>
+    <div class="inst-group">
+      <div class="inst-h">중앙 행정 기관</div>
+      <div class="inst-imgbox"><img src="assets/gov_central.png" alt="중앙 행정 기관"></div>
+    </div>
+    <div class="inst-group">
+      <div class="inst-h">공공 기관</div>
+      <div class="inst-imgbox"><img src="assets/gov_public.png" alt="공공 기관"></div>
+    </div>
+  </div>
+</div></div>
+  <div class="foot"><span>GeoSystem Research Corporation</span><span class="pg"></span></div>
+</section>
+
+<section class="slide">
+  <div class="head">
+    <div>
+      <div class="kicker">지오시스템리서치 소개 (예보사업부)</div>
+      <div class="title">예보사업부의 발전<span class="subtitle malgun-subtitle"  style="font-size:0.5em;">고전 모델부터 최신 모델까지</span></div>
+    </div>
+    <div class="logo"></div>
+  </div>
+  <div class="content"><div class="card" style="align-items:center"><div class="card-h">총 매출·순이익 성장 추이<span style="font-size:15px;font-weight:400;color:#7A8797;margin-left:10px">(예보사업부)</span><span class='legend'><i class='sw b'></i>총매출(억) <i class='sw g'></i>순이익(억)</span></div><img class="fig rise-reveal" style="max-height:265px" src="assets/rev_chart.png" alt="rev_chart"></div><div class="card" style="flex:1;margin-top:16px"><div class="card-h">기술 발전 로드맵</div><div class="roadmap"><div class="hrow"><div class="hlabel">시계열 예측</div><div class="hstage"><b>통계 기반</b><span>ARIMA 등</span></div><span class="harrow">▶</span><div class="hstage"><b>머신러닝</b><span>Random Forest · XGBoost</span></div><span class="harrow">▶</span><div class="hstage"><b>딥러닝</b><span>LSTM · GRU</span></div><span class="harrow">▶</span><div class="hstage"><b>최신 모델</b><span>Transformer · GNN · FEDformer</span></div></div><div class="hrow"><div class="hlabel">CV 모델</div><div class="hstage"><b>적용 시작</b><span>CNN Backbone</span></div><span class="harrow">▶</span><div class="hstage"><b>활용 확대</b><span>Fast R-CNN · YOLO</span></div><span class="harrow">▶</span><div class="hstage"><b>고도화</b><span>ViT · DETR · SAM</span></div></div><div class="hrow"><div class="hlabel">LLM 모델</div><div class="hstage"><b>적용 시작</b><span>Qwen · LLaMA · Gemma · GLM (번역 · 코딩 · 문서검색 · 업무지원)</span></div></div><div class="hrow"><div class="hlabel">수치 모델</div><div class="hstage"><b>도입 시작</b><span>NEMO 도입</span></div><span class="harrow">▶</span><div class="hstage"><b>적용 확대</b><span>SCHISM 도입</span></div><span class="harrow">▶</span><div class="hstage"><b>도입 확대</b><span>대기 · 해양 · 파랑 모델</span></div></div><div class="hrow"><div class="hlabel">빅데이터</div><div class="hstage"><b>데이터 수집</b><span>관측 · 센서 · 운영</span></div><span class="harrow">▶</span><div class="hstage"><b>데이터 통합</b><span>ETL · DB · 시계열</span></div><span class="harrow">▶</span><div class="hstage"><b>활용 확대</b><span>실시간 처리 · AI 학습</span></div><span class="harrow">▶</span><div class="hstage"><b>플랫폼 고도화</b><span>Data Lake · MLOps · AI Agent</span></div></div><div class="hrow"><div class="hlabel">해양위성</div><div class="hstage"><b>도입 시작</b><span>위성 R&D 용역과제</span></div><span class="harrow">▶</span><div class="hstage"><b>융복합 기술 도입</b><span>위성 AI 융복합</span></div><span class="harrow">▶</span><div class="hstage"><b>활용 확대</b><span>분석 · 모니터링 확대</span></div><span class="harrow">▶</span><div class="hstage"><b>사업 고도화</b><span>위성 관련 사업 확대</span></div></div></div></div></div>
+  <div class="foot"><span>GeoSystem Research Corporation</span><span class="pg"></span></div>
+</section>
+
+<section class="slide chapter">
+  <div class="ch-no">02</div>
+  <div class="ch-title">부이자료 활용 사례</div>
+  <div class="ch-line"></div>
+  <div class="ch-sub">부이자료 기반 서비스 및 정책 지원</div>
+  <div class="ch-corp">GeoSystem Research Corporation</div>
+</section>
+
+<section class="slide">
+  <div class="head">
+    <div>
+      <div class="kicker">부이자료 활용 사례</div>
+      <div class="title">QC 자동화 기술 개발<span class="subtitle">이상치 탐지 모델</span></div>
+    </div>
+    <div class="logo"></div>
+  </div>
+  <div class="content"><div class="tags"><div class="tag-row"><span class="tag">목적</span><span class="tag-txt">통계 기반 QC의 정확도 향상</span></div><div class="tag-row"><span class="tag">기법</span><span class="tag-txt">LSTM 기반 AI 모델(Bi-LSTM AE)을 활용한 실시간 이상치 탐지</span></div><div class="tag-row"><span class="tag">현업화</span><span class="tag-txt">시화조력발전소 내 현업화 진행완료</span></div></div><div class="cols" style="grid-template-columns:440px 1fr;flex:1">
+  <div class="card" style=""><div class="card-h">AI QC 절차</div><div class="vcenter"><img class="fig" style="max-height:90%" src="assets/aiqc_process.png" alt="AI QC 절차"></div></div>
+  <div class="rows">
+    <div class="card" style="flex:1"><div class="card-h">AI 모델 성능 평가 방법</div>
+<div class="note" style="margin-top:-4px;margin-bottom:14px">수동 QC로 정답자료가 구축된 정점 관측자료를 대상으로 정량적(수치)·정성적(가시화) 평가 병행</div>
+<div class="vcenter">
+<div class="cols" style="grid-template-columns:1fr 1fr;gap:26px">
+ <div>
+  <div class="mini-h">정량적 평가지표</div>
+  <table class="tbl left small" style="width:100%">
+   <tr><th style="width:130px">지표</th><th>설명</th></tr>
+   <tr><th>정밀도</th><td>AI가 이상치로 예측한 것 중 실제 이상치 비율</td></tr>
+   <tr><th>재현율</th><td>실제 이상치 중 AI가 올바르게 탐지한 비율</td></tr>
+   <tr><th>F1-Score</th><td>정밀도·재현율의 조화평균, 두 지표의 균형 평가</td></tr>
+  </table>
+ </div>
+ <div>
+  <div class="mini-h" style="padding-left: 80px;">정성적 평가지표</div>
+  <div class="vcenter" style="align-items:center"><img class="fig" style="max-width:90%;max-height:180px;border:1px solid #E3E8EE;border-radius:10px;padding:12px 16px" src="assets/qualitative_metric_legend.png" alt="정성적 평가지표"></div>
+ </div>
+</div>
+</div></div>
+    <div class="card" style="flex:1"><div class="card-h">평가 결과 예시</div>
+<div class="note" style="margin-top:-4px;margin-bottom:14px">정량적 평가 결과, 알고리즘 QC와 AI QC 판별을 병행하면 단독 알고리즘 QC 대비 Recall · F1-score 모두 향상</div>
+<div class="vcenter">
+<div class="cols" style="grid-template-columns:1fr 1fr;gap:26px;align-items:start">
+ <div>
+  <div class="mini-h">정량적 평가 결과</div>
+  <table class="tbl small" style="width:100%">
+   <tr><th rowspan="2">대표수위계</th><th colspan="2">알고리즘 QC</th><th colspan="2" class="acc">알고리즘 + AI QC</th></tr>
+   <tr class="sub"><th>재현율</th><th>F1-score</th><th class="acc">재현율</th><th class="acc">F1-score</th></tr>
+   <tr><th>해측</th><td>0.356</td><td>0.525</td><td class="up">0.5</td><td class="up">0.634</td></tr>
+   <tr><th>호측</th><td>0.458</td><td>0.629</td><td class="up">1</td><td class="up">0.906</td></tr>
+  </table>
+ </div>
+ <div>
+  <div class="mini-h">대표수위계 해측</div>
+  <img class="fig" style="width:90%" src="assets/qc_sea_repr.png" alt="대표수위계 해측">
+ </div>
+</div>
+</div></div>
+  </div>
+</div></div>
+  <div class="foot"><span>GeoSystem Research Corporation</span><span class="pg"></span></div>
+</section>
+
+<section class="slide">
+  <div class="head">
+    <div>
+      <div class="kicker">부이자료 활용 사례</div>
+      <div class="title">QC 자동화 기술 개발<span class="subtitle">이상치 탐지 모델</span></div>
+    </div>
+    <div class="logo"></div>
+  </div>
+  <div class="content">
+    <div class="card" style="flex:1">
+      <div class="card-h">AI QC 대시보드 (라이브 시연)<span class="demo-url">http://192.168.2.78:8020</span>
+        <span style="margin-left:auto;display:inline-flex;align-items:center;gap:12px">
+          <span style="font-size:15px;font-weight:400;color:#7A8797;text-align:right;line-height:1.4">휴대폰으로<br>바로 접속</span>
+          <img src="assets/qc_server_qr.png" alt="QC 대시보드 QR" style="height:104px;border:1px solid #E3E8EE;border-radius:10px;padding:6px;background:#fff">
+        </span>
+      </div>
+      <div class="demo-wrap"><iframe class="demo-frame" src="http://192.168.2.78:8020/" title="GeoSR QC Dashboard"></iframe></div>
+    </div>
+  </div>
+  <div class="foot"><span>GeoSystem Research Corporation</span><span class="pg"></span></div>
+</section>
+
+<section class="slide">
+  <div class="head">
+    <div>
+      <div class="kicker">부이자료 활용 사례</div>
+      <div class="title">외해 관측자료를 활용한 파랑자료 보간 기술 개발<span class="subtitle">파랑 보간 모델</span></div>
+    </div>
+    <div class="logo"></div>
+  </div>
+  <div class="content"><div class="tags"><div class="tag-row"><span class="tag">목적</span><span class="tag-txt">안정적인 이안류 지수 산출을 위한 파랑자료 추산</span></div><div class="tag-row"><span class="tag">기법</span><span class="tag-txt">시계열 보간에 최적화된 AI모델(SAITS)로 1일(48시간) 이내 누락된 데이터 보간</span></div><div class="tag-row"><span class="tag">현업화</span><span class="tag-txt">4개소 대상 현업화 완료 (확장 예정)</span></div></div><div class="cols" style="grid-template-columns:1fr 520px;flex:1">
+  <div class="card" style=""><div class="card-h">자료 설명</div><div class="vcenter">
+<table class="tbl left" style="width:100%">
+ <tr><th style="width:210px">자료 종류</th><td>지점별 시계열 관측부이 파랑자료</td></tr>
+ <tr><th>보간 대상 및<br>입력자료 구성</th><td>경포대 (망상·낙산·동해·울릉도·울진)<br>망상 (경포대·낙산·동해·울릉도·울진)<br>송정 (해운대·임랑·울산·거제도)<br>해운대 (송정·임랑·울산·거제도)</td></tr>
+ <tr><th>자료 간격</th><td>30분 간격</td></tr>
+ <tr><th>수집 기간</th><td>2021.01 ~ (경포대·망상)<br>2021.05 ~ (송정·해운대)</td></tr>
+</table>
+<div class="figrow" style="flex:0 0 auto;margin-top:18px;gap:20px">
+  <figure style="flex:0 0 auto"><img class="fig" style="max-height:185px" src="assets/khoa_buoy.jpg" alt="khoa_buoy"><figcaption>국립해양조사원 해양 관측부이</figcaption></figure>
+  <figure style="flex:0 0 auto"><img class="fig" style="max-height:185px" src="assets/kma_buoy.jpg" alt="kma_buoy"><figcaption>기상청 해양기상 관측부이</figcaption></figure>
+</div>
+<div class="note">자료 출처 : 국립해양조사원 해양 관측부이 · 기상청 해양기상 관측부이</div></div></div>
+  <div class="card" style=""><div class="card-h">모델 성능평가 절차</div><div class="vcenter" style="align-items:center"><img class="fig" style="max-height:100%;border:none;border-radius:0;background:transparent;padding:0;box-shadow:none" src="assets/perf_procedure_note.jpg" alt="perf_procedure_note"></div></div>
+</div></div>
+  <div class="foot"><span>GeoSystem Research Corporation</span><span class="pg"></span></div>
+</section>
+
+<section class="slide">
+  <div class="head">
+    <div>
+      <div class="kicker">부이자료 활용 사례</div>
+      <div class="title">외해 관측자료를 활용한 파랑자료 보간 기술 개발<span class="subtitle">파랑 보간 모델</span></div>
+    </div>
+    <div class="logo"></div>
+  </div>
+  <div class="content"><div class="banner">경포대 · 망상 · 송정 · 해운대 해수욕장 검증 데이터에서 <b>유의파고와 파주기를 보간</b></div>
+<div class="cols" style="grid-template-columns:1fr 420px;flex:1">
+  <div class="rows">
+    <div class="card" style=""><div class="card-h">보간 성능</div>
+<table class="tbl" style="width:100%">
+ <tr><th rowspan="2">해수욕장</th><th colspan="2">유의파고</th><th colspan="2" class="acc">파주기</th></tr>
+ <tr class="sub"><th>MAE(m)</th><th>RMSE(m)</th><th class="acc">MAE(sec)</th><th class="acc">RMSE(sec)</th></tr>
+ <tr><th>경포대</th><td>0.059</td><td>0.074</td><td>0.280</td><td>0.356</td></tr>
+ <tr><th>망상</th><td>0.196</td><td>0.240</td><td>0.308</td><td>0.391</td></tr>
+ <tr><th>송정</th><td>0.090</td><td>0.357</td><td>0.114</td><td>0.457</td></tr>
+ <tr><th>해운대</th><td>0.106</td><td>0.133</td><td>0.493</td><td>0.618</td></tr>
+</table></div>
+    <div class="card" style="flex:1"><div class="card-h">보간 결과 (유의파고)</div>
+      <div class="figrow">
+        <figure><img class="fig" style="" src="assets/wave_gyeongpo.png" alt="wave_gyeongpo"><figcaption>경포대 해수욕장</figcaption></figure>
+        <figure><img class="fig" style="" src="assets/wave_mangsang.png" alt="wave_mangsang"><figcaption>망상 해수욕장</figcaption></figure>
+      </div></div>
+  </div>
+  <div class="card" style="align-items:center"><div class="card-h">정점 위치도</div><img class="fig" style="flex:1;width:130%;min-height:0;max-height:550px" src="assets/map_wave_v2.png" alt="보간 대상 · 참조 지점"></div>
+</div></div>
+  <div class="foot"><span>GeoSystem Research Corporation</span><span class="pg"></span></div>
+</section>
+
+<section class="slide">
+  <div class="head">
+    <div>
+      <div class="kicker">부이자료 활용 사례</div>
+      <div class="title">원자력발전소 취수구 수온 예측 모델 개발<span class="subtitle">수온 예측 모델</span></div>
+    </div>
+    <div class="logo"></div>
+  </div>
+  <div class="content"><div class="tags"><div class="tag-row"><span class="tag">목적</span><span class="tag-txt">원자력발전소의 안정적 발전 효율 유지를 위한 취수구 수온 변화 예측</span></div><div class="tag-row"><span class="tag">기법</span><span class="tag-txt">취수구 과거 수온 GRU 인코더와 JMA·HYCOM 시공간 인코더를 gated fusion으로 결합한 3-encoder ST3 모델로 6시간 수온을 예측</span></div><div class="tag-row"><span class="tag">현업화</span><span class="tag-txt">월성 단지 대상 현업화 완료 (확장 예정)</span></div></div><div class="cols" style="grid-template-columns:1fr 760px;flex:1">
+  <div class="card" style=""><div class="card-h">딥러닝 입력 자료</div><div class="vcenter">
+<table class="tbl" style="width:100%">
+ <tr><th style="width:190px">구분</th><th style="width:200px">활용인자</th><th>수집기간</th></tr>
+ <tr><th>JMA</th><td>기온, 풍향</td><td class="left">2003.06 ~ 현재</td></tr>
+ <tr><th>HYCOM</th><td>수온, 염분, 해류</td><td class="left">GOFS 3.1 재분석 (1994~2015) · GOFS 3.1 (2014.07~2024.09) · ESPC-D-V02 (2024.08~현재)</td></tr>
+ <tr><th>GFS <span class="dim" style="color:#3A4A5C;white-space:nowrap;display:block">(운영 시 예비)</span></th><td>기온, 풍향</td><td class="left">2025.08 ~ 현재</td></tr>
+ <tr><th>MYOCEAN <span class="dim" style="color:#3A4A5C;white-space:nowrap">(운영 시 예비)</span></th><td>수온, 염분, 해류</td><td class="left">2025.08 ~ 현재</td></tr>
+</table>
+<div class="figrow" style="flex:0 0 auto;margin-top:18px;gap:20px">
+  <figure style="flex:0 0 auto"><img class="fig" style="max-height:230px" src="assets/jma_input.png" alt="jma_input"><figcaption>JMA</figcaption></figure>
+  <figure style="flex:0 0 auto"><img class="fig" style="max-height:230px" src="assets/hycom_input.jpg" alt="hycom_input"><figcaption>HYCOM</figcaption></figure>
+</div></div></div>
+  <div class="rows">
+    <div class="card" style="flex:1"><div class="card-h">AI 모델 구조</div><div class="vcenter" style="align-items:center"><img class="fig" style="width:120%" src="assets/tft_model_v3.png" alt="수온 예측 모델"></div></div>
+    <div class="card" style="flex:0 0 auto"><div class="card-h">입력 시퀀스 구성</div>
+<div class="seq">
+ <div class="seq-legend"><i class="sw past"></i>알고 있는 자료 <i class="sw fut"></i>AI모델의 예측기간</div>
+ <div class="seq-row"><span>취수구 수온</span><div class="bar"><div class="past" style="width:50%"></div></div></div>
+ <div class="seq-row"><span>기상자료</span><div class="bar"><div class="past" style="width:100%"></div></div></div>
+ <div class="seq-row"><span>해양자료</span><div class="bar"><div class="past" style="width:100%"></div></div></div>
+ <div class="seq-row"><span>AI모델 예측</span><div class="bar"><div class="fut" style="left:50%;width:50%"></div></div></div>
+ <div class="seq-axis"><span>-N</span><span>…</span><span>-2</span><span>-1</span><span class="now">0 (현시간)</span><span>1</span><span>2</span><span>…</span><span>72</span></div>
+</div></div>
+  </div>
+</div></div>
+  <div class="foot"><span>GeoSystem Research Corporation</span><span class="pg"></span></div>
+</section>
+
+<section class="slide">
+  <div class="head">
+    <div>
+      <div class="kicker">부이자료 활용 사례</div>
+      <div class="title">원자력발전소 취수구 수온 예측 모델 개발<span class="subtitle">수온 예측 모델</span></div>
+    </div>
+    <div class="logo"></div>
+  </div>
+  <div class="content">
+    <div class="card" style="flex:1">
+      <div class="card-h">취수구 해수온도 예측 시스템 (라이브 시연)<span class="demo-url">http://112.121.26.163:8010</span>
+        <span style="margin-left:14px;display:inline-flex;align-items:center;font-size:15px;font-weight:600;color:#3A4A5C;background:#F2F4F7;border:1px solid #E3E8EE;border-radius:999px;padding:4px 14px;letter-spacing:0">(비보안 임시계정) ID : test&nbsp;&nbsp;·&nbsp;&nbsp;PW : test</span>
+        <span style="margin-left:auto;display:inline-flex;align-items:center;gap:12px">
+          <span style="font-size:15px;font-weight:400;color:#7A8797;text-align:right;line-height:1.4">휴대폰으로<br>바로 접속</span>
+          <img src="assets/khnp_server_qr.png" alt="취수구 해수온도 예측 시스템 QR" style="height:104px;border:1px solid #E3E8EE;border-radius:10px;padding:6px;background:#fff">
+        </span>
+      </div>
+      <div class="demo-wrap"><iframe class="demo-frame" src="http://112.121.26.163:8010/login" title="취수구 해수온도 예측 시스템"></iframe></div>
+    </div>
+  </div>
+  <div class="foot"><span>GeoSystem Research Corporation</span><span class="pg"></span></div>
+</section>
+
+<section class="slide">
+  <div class="head">
+    <div>
+      <div class="kicker">부이자료 활용 사례</div>
+      <div class="title">태풍 정보를 활용한 해일고 예측 기술 개발<span class="subtitle">해수위 예측 모델</span></div>
+    </div>
+    <div class="logo"></div>
+  </div>
+  <div class="content"><div class="tags"><div class="tag-row"><span class="tag">목적</span><span class="tag-txt">수치모델의 계산 지연 문제를 해결하는 실시간 폭풍 해일고 예측 AI 모델 개발</span></div><div class="tag-row"><span class="tag">기법</span><span class="tag-txt">Convolution 신경망과 Transformer를 결합한 AI 모델로 폭풍 해일고 예측</span></div><div class="tag-row"><span class="tag">현업화</span><span class="tag-txt">태풍 진행 경로 추적을 위해 47개 지점 대상 현업화 적용 완료</span></div></div><div class="cols arrows" style="grid-template-columns:1.15fr 20px 1fr 20px 0.95fr 20px 1fr;flex:1">
+  <div class="card" style=""><div class="card-h">입력 자료 (기상 예측자료)</div><div class="vcenter">
+<div class="figrow" style="flex:0 0 auto;margin-bottom:16px;gap:34px">
+  <figure style="flex:0 0 auto"><img class="fig" style="max-height:128px;border:none;background:transparent;padding:0;box-shadow:none;filter:drop-shadow(0 6px 14px rgba(22,40,60,.25))" src="assets/gfs_globe.png" alt="gfs_globe"><figcaption>GFS</figcaption></figure>
+  <figure style="flex:0 0 auto"><img class="fig" style="max-height:128px;border:none;background:transparent;padding:0;box-shadow:none;filter:drop-shadow(0 6px 14px rgba(22,40,60,.25))" src="assets/jma_globe.png" alt="jma_globe"><figcaption>JMA</figcaption></figure>
+</div>
+<table class="tbl left small" style="width:100%">
+ <tr><th></th><th>GFS</th><th>JMA</th></tr>
+ <tr><th>해상도</th><td style="white-space:nowrap;font-size:15px">0.25° × 0.25°</td><td style="white-space:nowrap;font-size:15px">0.0625° × 0.05°</td></tr>
+ <tr><th>수집기간</th><td>2015 ~ 2024</td><td>2010 ~ 2024</td></tr>
+ <tr><th>예측기간</th><td>384시간<br>(3·6시간 간격)</td><td>34시간<br>(1시간 간격)</td></tr>
+ <tr><th>활용기간</th><td>72시간<br><span style="white-space:nowrap;letter-spacing:-.8px;font-size:inherit;color:inherit">(1시간 간격 보간)</span></td><td>34시간<br>(1시간 간격)</td></tr>
+ <tr><th>활용변수</th><td colspan="2">Wind(U, V), MSLP</td></tr>
+</table></div></div>
+  <div class="colarrow">▶</div>
+  <div class="card" style=""><div class="card-h">정답 자료 (조위관측소 해수위)</div><div class="vcenter">
+<table class="tbl left small" style="width:100%">
+ <tr><th>자료 종류</th><td>지점별 시계열 자료</td></tr>
+ <tr><th>변수 구성</th><td>잔차<br>(관측조위 − 천문조위)</td></tr>
+ <tr><th>관측소 수</th><td>47개소</td></tr>
+ <tr><th>자료 간격</th><td>1시간 간격</td></tr>
+ <tr><th>수집 기간</th><td>2010 ~ 2024</td></tr>
+</table>
+<img class="fig" style="margin-top:14px;max-height:300px" src="assets/station_map.jpg" alt="station_map">
+<div class="note">국립해양조사원 조위관측소 자료</div></div></div>
+  <div class="colarrow">▶</div>
+  <div class="card" style=""><div class="card-h">해수위 예측 모델</div><div class="vflow"><div class="vstep">Input (N, T<sub>input</sub>, W, H, 3)</div><div class="varrow">▼</div><div class="vstep">Conv3D × 3 (+ Pooling)</div><div class="varrow">▼</div><div class="vstep">Station Indexing</div><div class="varrow">▼</div><div class="vstep">Positional Encoding</div><div class="varrow">▼</div><div class="vstep">Transformer Encoder</div><div class="varrow">▼</div><div class="vstep">Prediction Head</div><div class="varrow">▼</div><div class="vstep">Output (N, 47, T<sub>pred</sub>)</div></div></div>
+  <div class="colarrow">▶</div>
+  <div class="card" style=""><div class="card-h">해수위 예측자료 생성</div><div class="vcenter">
+<img class="fig" style="width:100%" src="assets/tide1.png" alt="tide1">
+<img class="fig" style="width:100%;margin-top:10px" src="assets/tide2.png" alt="tide2">
+<img class="fig" style="width:100%;margin-top:10px" src="assets/tide3.png" alt="tide3">
+<img class="fig" style="width:100%;margin-top:10px" src="assets/tide4.png" alt="tide4">
+<div class="note">47개 지점별 해수위 예측 시계열 생성 예시</div></div></div>
+</div></div>
+  <div class="foot"><span>GeoSystem Research Corporation</span><span class="pg"></span></div>
+</section>
+
+<section class="slide">
+  <div class="head">
+    <div>
+      <div class="kicker">부이자료 활용 사례</div>
+      <div class="title">태풍 정보를 활용한 해일고 예측 기술 개발<span class="subtitle">해수위 예측 모델</span></div>
+    </div>
+    <div class="logo"></div>
+  </div>
+  <div class="content"><ul class="bullets"><li>해수위 예측성능 평가 결과 <em>RMSE 6~7cm, MAPE 3~5% 내외</em>의 우수한 성능 (JMA 기반 모델이 GFS 대비 RMSE 13.94%, MAPE 15.53% 더 우수)</li><li>학습 기간 : 2010~2022(JMA), 2015~2022(GFS) | 검증 기간 : 2023~2024(공통)</li></ul><div class="cols" style="grid-template-columns:640px 1fr">
+  <div class="card" style=""><div class="card-h">월별 성능지표 (전 관측소 평균)</div>
+<table class="tbl" style="width:100%">
+ <tr><th colspan="2">구분</th><th>RMSE(cm)</th><th>MAPE(%)</th></tr>
+ <tr><td rowspan="2">2024.01</td><td class="acc">JMA</td><td class="up">6.83</td><td class="up">5.13</td></tr>
+ <tr class="sub"><td>GFS</td><td>7.83</td><td>5.73</td></tr>
+ <tr><td rowspan="2">2024.07</td><td class="acc">JMA</td><td class="up">6.63</td><td class="up">3.47</td></tr>
+ <tr class="sub"><td>GFS</td><td>7.81</td><td>4.37</td></tr>
+</table></div>
+  <div class="card" style=""><div class="card-h">종합 성능지표 (전 관측소 평균)</div>
+<table class="tbl" style="width:100%">
+ <tr><th>구분</th><th>RMSE(cm)</th><th>MAPE(%)</th><th>Peak Acc.(%)</th><th>Peak Err.(cm)</th></tr>
+ <tr><td class="acc">JMA</td><td class="up">6.49</td><td class="up">3.6</td><td class="up">88.40</td><td class="up">-3.70</td></tr>
+ <tr><td>GFS</td><td>8.06</td><td>4.66</td><td>87.70</td><td>-4.20</td></tr>
+</table></div>
+</div><div class="card" style="flex:1;margin-top:16px"><div class="card-h">태풍시기 조위 잔차 예측 결과 비교 (2023년 태풍 카눈)</div>
+<div class="figrow">
+  <figure><img class="fig" style="" src="assets/surge_jeju.png" alt="surge_jeju"></figure>
+  <figure><img class="fig" style="" src="assets/surge_yeosu.png" alt="surge_yeosu"></figure>
+  <figure><img class="fig" style="" src="assets/surge_pohang.png" alt="surge_pohang"></figure>
+</div>
+<div class="note">회색 선 : 관측(True) · 파란 선 : 예측(Predicted) · 붉은 음영 : 태풍 기간</div></div></div>
+  <div class="foot"><span>GeoSystem Research Corporation</span><span class="pg"></span></div>
+</section>
+
+<section class="slide chapter">
+  <div class="ch-no">03</div>
+  <div class="ch-title">AX 플랫폼</div>
+  <div class="ch-line"></div>
+  <div class="ch-sub">AI Transformation Platform</div>
+  <div class="ch-corp">GeoSystem Research Corporation</div>
+</section>
+
+<section class="slide">
+  <div class="head">
+    <div>
+      <div class="kicker">AX 플랫폼</div>
+      <div class="title">Auto AI 플랫폼을 이용한 시계열 모델 예측<span class="subtitle">모델 학습</span></div>
+    </div>
+    <div class="logo"></div>
+  </div>
+  <div class="content"><div class="tags"><div class="tag-row"><span class="tag">목적</span><span class="tag-txt">전문 지식이 없는 사용자도 UI를 통해 쉽게 활용하는 AI 플랫폼 제공</span></div><div class="tag-row"><span class="tag">특징</span><span class="tag-txt">데이터를 손쉽게 구성하고 클릭 몇 번으로 AI 모델 학습 · 활용</span></div><div class="tag-row"><span class="tag">설정</span><span class="tag-txt">epoch, learning rate, optimizer 등 세부 학습 파라미터 조정 가능</span></div></div><div class="cols" style="grid-template-columns:1fr 560px;flex:1">
+  <div class="card" style="align-items:center;justify-content:center"><div class="card-h">AI플랫폼 시계열 모델 학습 화면</div><img class="fig" style="width:100%" src="assets/platform_train.png" alt="platform_train"></div>
+  <div class="card" style=""><div class="card-h">학습 절차 및 설정</div>
+<div class="mini-h">학습 절차</div>
+<div class="chips">
+ <span class="cstep">학습 모델 선택</span><span class="carr">▶</span>
+ <span class="cstep">학습 설정(Train Config)</span><span class="carr">▶</span>
+ <span class="cstep">모델 학습</span><span class="carr">▶</span>
+ <span class="cstep">Loss · log 표출</span><span class="carr">▶</span>
+ <span class="cstep">모델 공유 / 예측모델 선정</span>
+</div>
+<div style="border-top:1px solid #E3E8EE;margin:26px 0 20px"></div>
+<div class="card-h">학습 파라미터</div>
+<div class="mini-h">학습 파라미터 설명</div>
+<table class="tbl left small" style="width:100%">
+ <tr><th style="width:190px">파라미터</th><th>설명</th></tr>
+ <tr><th>epoch</th><td>데이터셋 반복 학습 수</td></tr>
+ <tr><th>learning rate</th><td>모델의 최소 손실을 위한 학습량 매개변수</td></tr>
+ <tr><th>optimizer</th><td>최소 손실을 위한 가중치 최적화 알고리즘</td></tr>
+ <tr><th>loss function</th><td>예측값 · 실제값 비교(손실값) 계산 함수</td></tr>
+</table></div>
+</div></div>
+  <div class="foot"><span>GeoSystem Research Corporation</span><span class="pg"></span></div>
+</section>
+
+<section class="slide">
+  <div class="head">
+    <div>
+      <div class="kicker">AX 플랫폼</div>
+      <div class="title">Auto AI 플랫폼을 이용한 시계열 모델 예측<span class="subtitle">모델 예측</span></div>
+    </div>
+    <div class="logo"></div>
+  </div>
+  <div class="content"><div class="cols" style="grid-template-columns:1fr 560px;flex:1">
+  <div class="card" style="align-items:center;justify-content:center"><div class="card-h">AI플랫폼 시계열 모델 예측 화면</div><img class="fig" style="width:100%" src="assets/platform_pred.png" alt="platform_pred"></div>
+  <div class="card" style=""><div class="card-h">예측 기능</div><div class="vcenter">
+<table class="tbl left" style="width:100%">
+ <tr><th style="width:180px">기능</th><th>설명</th></tr>
+ <tr><th>① 모델 조회</th><td>예측 모델 정보 조회 — 모델 변수, 학습 loss 등</td></tr>
+ <tr><th>② 모델 선정</th><td>사용자간 공유된 학습 모델 중 예측 모델 선정</td></tr>
+ <tr><th>③ 기간 선정</th><td>예측 기간 선택 후 예측 수행</td></tr>
+ <tr><th>④ 결과 확인</th><td>모델별 결과값 테이블 · 그래프 표출</td></tr>
+ <tr><th>⑤ 결과 저장</th><td>결과값 저장 기능</td></tr>
+</table></div></div>
+</div>
+<div class="banner check">✔&nbsp; 웹 기반의 딥러닝 모델 분석 플랫폼 — UI를 통해 <b>사용자가 직접 손쉽게 AI모델 활용 및 운영 가능</b></div></div>
+  <div class="foot"><span>GeoSystem Research Corporation</span><span class="pg"></span></div>
+</section>
+</div>
+<button class="navbtn" id="prev" title="이전 (←)">&#9664;</button>
+<button class="navbtn" id="next" title="다음 (→/Space)">&#9654;</button>
+<div id="counter"></div>
+<div id="pbar"></div>
+<script>
+(function () {
+  var slides = document.querySelectorAll('.slide');
+  var n = slides.length, cur = 0;
+  var counter = document.getElementById('counter');
+  slides.forEach(function (s, i) {
+    var pg = s.querySelector('.pg');
+    if (pg) pg.textContent = (i + 1) + ' / ' + n;
+  });
+  function reloadDemos(slide) {
+    // 라이브 데모 슬라이드 진입 시 iframe을 강제 리로드 → 서버 최신 화면 반영
+    slide.querySelectorAll('iframe.demo-frame').forEach(function (f) {
+      var base = f.dataset.src || f.getAttribute('src').split('?_ts=')[0];
+      f.dataset.src = base;
+      f.src = base + (base.indexOf('?') > -1 ? '&' : '?') + '_ts=' + Date.now();
+    });
+  }
+  function show(i) {
+    var prev = cur;
+    cur = Math.max(0, Math.min(n - 1, i));
+    for (var k = 0; k < n; k++) slides[k].classList.toggle('on', k === cur);
+    counter.textContent = (cur + 1) + ' / ' + n;
+    document.getElementById('pbar').style.width = (((cur + 1) / n) * 100) + '%';
+    if (cur !== prev) reloadDemos(slides[cur]);
+  }
+  function fit() {
+    var s = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
+    document.getElementById('stage').style.transform =
+      'translate(-50%,-50%) scale(' + s + ')';
+  }
+  function startTitleTyping() {
+    var title = document.querySelector('.typing-title');
+    if (!title || title.dataset.typed === '1') return;
+    var textEl = title.querySelector('.typing-text');
+    var fullText = title.getAttribute('data-text') || '';
+    var idx = 0;
+    title.dataset.typed = '1';
+    textEl.textContent = '';
+    window.setTimeout(function typeNext() {
+      textEl.textContent = fullText.slice(0, idx);
+      if (idx < fullText.length) {
+        idx += 1;
+        window.setTimeout(typeNext, 115);
+      }
+    }, 1200);
+  }
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'PageDown') { e.preventDefault(); show(cur + 1); }
+    else if (e.key === 'ArrowLeft' || e.key === 'PageUp') { e.preventDefault(); show(cur - 1); }
+    else if (e.key === 'Home') show(0);
+    else if (e.key === 'End') show(n - 1);
+    else if (e.key === 'f' || e.key === 'F') {
+      if (document.fullscreenElement) document.exitFullscreen();
+      else document.documentElement.requestFullscreen();
+    }
+  });
+  document.getElementById('prev').onclick = function () { show(cur - 1); };
+  document.getElementById('next').onclick = function () { show(cur + 1); };
+  window.addEventListener('resize', fit);
+  fit(); show(0); startTitleTyping();
+})();
+</script>
+</body>
+</html>
