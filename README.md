@@ -5,8 +5,8 @@
 한반도 주변 해역의 해양기상부이·파고부이(기상청)와 해양관측부이(국립해양조사원)를 하나의 위성 지도에 모아, 수신 상태·실시간 관측값·시계열·이상치(QC)를 한눈에 확인할 수 있게 한다.
 
 <p>
-  <img src="docs/design_v2_full.png" alt="지도 대시보드" width="49%"/>
-  <img src="docs/phase3_detail_kma.png" alt="부이 상세·시계열" width="49%"/>
+  <img src="docs/hero_overview.png" alt="지도 대시보드 — 위성 베이스 + 바람장·수온장 오버레이" width="49%"/>
+  <img src="docs/hero_detail.png" alt="부이 상세 — 시계열·QC·가상 예측" width="49%"/>
 </p>
 
 ## 주요 기능
