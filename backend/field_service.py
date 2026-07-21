@@ -732,7 +732,7 @@ def _fetch_rtofs_one(cycle_date: datetime, fhr: int, now_utc: datetime) -> dict:
     kst = now_utc.replace(minute=0, second=0, microsecond=0) + timedelta(hours=9)
     return {
         "valid_kst": kst.strftime("%Y-%m-%d %H:00"),   # 바람 valid_kst 와 항상 동일(같은 target 시각)
-        "source": f"NOAA RTOFS 1/12° 해양분석 {cycle_date:%m/%d} 00z+{fhr:03d}h",
+        "source": f"NOAA RTOFS 1/12° {cycle_date:%m/%d} 00z+{fhr:03d}h",
         "bounds": [LON_MIN, LAT_MIN, LON_MAX, LAT_MAX],
         "rows": _RTOFS_ROWS,
         "cols": _RTOFS_COLS,
