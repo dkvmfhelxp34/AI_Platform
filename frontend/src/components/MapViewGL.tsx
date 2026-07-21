@@ -977,9 +977,19 @@ function FieldLegendRow({ kind, field }: { kind: 'wind' | 'sst'; field: FieldWin
         <span>{lo}{unit}</span>
         <span>{hi}{unit}</span>
       </div>
-      <div style={{ fontSize: 11, color: 'var(--t-lo)', lineHeight: 1.4, wordBreak: 'keep-all' }}>
-        {field.source} · {field.valid_kst}
-      </div>
+      {/* 출처/기준시각 2줄 고정 — 윗줄: 제공자·해상도·기준일(…{MM/DD}), 둘째줄: 모델시각(마지막
+          토큰 {HH}z+{F}h)부터 · 기준시각. 바람장·수온장 동일 양식(사용자 지시 2026-07-21). */}
+      {(() => {
+        const sp = field.source.lastIndexOf(' ')
+        const head = sp > 0 ? field.source.slice(0, sp) : field.source
+        const tail = sp > 0 ? field.source.slice(sp + 1) : ''
+        return (
+          <div style={{ fontSize: 11, color: 'var(--t-lo)', lineHeight: 1.4, wordBreak: 'keep-all' }}>
+            <div>{head}</div>
+            <div>{tail ? `${tail} · ${field.valid_kst}` : field.valid_kst}</div>
+          </div>
+        )
+      })()}
     </div>
   )
 }
