@@ -12,6 +12,10 @@
   src:url(assets/pretendard-600.woff2) format('woff2'); }
 @font-face { font-family:'Pretendard'; font-weight:700; font-style:normal;
   src:url(assets/pretendard-700.woff2) format('woff2'); }
+@font-face { font-family:'NanumGothic'; font-weight:400; font-style:normal;
+  src:url(assets/NanumGothic.woff2) format('woff2'); }
+@font-face { font-family:'NanumGothicBold'; font-weight:700; font-style:normal;
+  src:url(assets/NanumGothicBold.woff2) format('woff2'); }
 
 /* 팔레트: 잉크 #16283C · 본문 #3A4A5C · 뮤트 #7A8797 · 포인트 #1D5FD1 · 헤어라인 #E3E8EE */
 * { margin:0; padding:0; box-sizing:border-box; }
@@ -31,8 +35,8 @@ html,body { width:100%; height:100%; background:#171B21; overflow:hidden;
 .kicker { font-size:15px; font-weight:600; color:#1D5FD1; letter-spacing:5px; margin-bottom:12px; }
 .title { font-size:39px; font-weight:700; color:#16283C; letter-spacing:-.5px; }
 .subtitle { font-size:22px; font-weight:400; color:#7A8797; letter-spacing:0; margin-left:22px;
-  padding-left:22px; border-left:1px solid #C6CFDA; }
-.malgun-subtitle { font-family:"Malgun Gothic","맑은 고딕",sans-serif; }
+  padding-left:22px; border-left:1px solid #C6CFDA; font-family:'NanumGothicBold',sans-serif; }
+.malgun-subtitle { font-family:'NanumGothicBold',sans-serif; }
 .logo { width:200px; height:86px; background-image:url('assets/logo_head.png');
   background-size:contain; background-repeat:no-repeat; background-position:right center; }
 .content { position:absolute; top:150px; bottom:48px; left:0; right:0;
@@ -67,7 +71,8 @@ html,body { width:100%; height:100%; background:#171B21; overflow:hidden;
   padding:22px 30px; display:flex; flex-direction:column; min-height:0;
   box-shadow:0 1px 2px rgba(22,40,60,.04); }
 .card-h { font-size:22px; font-weight:700; color:#16283C; margin-bottom:16px;
-  display:flex; align-items:center; align-self:stretch; letter-spacing:-.3px; }
+  display:flex; align-items:center; align-self:stretch; letter-spacing:-.3px;
+  font-family:'NanumGothicBold',sans-serif; }
 .card-h::before { content:""; flex:0 0 18px; width:18px; height:18px;
   border:5px solid #1D6FEA; border-radius:50%; background:transparent;
   margin-right:14px; box-shadow:0 0 0 4px rgba(29,111,234,.10), 0 0 18px rgba(29,111,234,.58);
@@ -95,6 +100,9 @@ html,body { width:100%; height:100%; background:#171B21; overflow:hidden;
 .tbl td.acc { background:transparent; font-weight:700; }
 .tbl td.up { font-weight:700; color:#16283C; }
 .tbl td.hit { background:#F2F4F7; }
+/* 구분 열: 회색배경(#F2F4F7) · 파란 굵은 글씨 · 굵은 회색 하단선 */
+.tbl td.gubun, .tbl th.gubun { background:#F2F4F7 !important; color:#1D5FD1; font-weight:700;
+  border-bottom:2px solid #D4DAE2; }
 .tbl td span { display:block; font-size:15px; color:#7A8797; font-weight:400; }
 .tbl tr > th:first-child, .tbl tr > td:first-child { color:#1D5FD1; font-weight:700; }
 .tbl tr.sub > th:first-child, .tbl tr.sub > td:first-child { color:#16283C; }
@@ -113,6 +121,20 @@ html,body { width:100%; height:100%; background:#171B21; overflow:hidden;
   text-align:center; font-size:20px; font-weight:600; color:#16283C; padding:10px 8px; }
 .varrow { text-align:center; color:#1D5FD1; font-size:14px; line-height:1.5; }
 .colarrow { align-self:center; color:#1D5FD1; font-size:24px; }
+/* 파이프라인 화살표: 왼→오 순차 딜레이로 흐름이 오른쪽으로 전파되는 느낌 */
+.cols.arrows > .colarrow { animation:flowRight 1.4s ease-in-out infinite;
+  will-change:transform,opacity; }
+.cols.arrows > .colarrow:nth-child(2) { animation-delay:0s; }
+.cols.arrows > .colarrow:nth-child(4) { animation-delay:.28s; }
+.cols.arrows > .colarrow:nth-child(6) { animation-delay:.56s; }
+/* 왼쪽에서 나타나 오른쪽으로 흘러 사라지는 컨베이어형 흐름 */
+/* 왼쪽에서 선명하게 나타나 오른쪽으로 흘러가며 사라지는 컨베이어형 흐름 */
+@keyframes flowRight {
+  0%   { transform:translateX(-16px); opacity:0;   }
+  22%  { transform:translateX(-8px);  opacity:1;   }
+  60%  { transform:translateX(8px);   opacity:1;   }
+  100% { transform:translateX(22px);  opacity:0;   }
+}
 .chips { display:flex; flex-wrap:wrap; align-items:center; gap:9px; }
 .chips .cstep { background:#F4F7FB; border:1px solid #DCE4EE; border-radius:8px;
   padding:6px 14px; font-size:18px; font-weight:600; color:#16283C; }
@@ -145,6 +167,32 @@ html,body { width:100%; height:100%; background:#171B21; overflow:hidden;
 .orgchart-wrap .fig { flex:1; width:100%; min-height:0; }
 /* 매출 차트: 좌→우 리빌 + 살짝 떠오르는 상승 연출 (슬라이드 진입 시마다 재생) */
 .rise-reveal { animation:riseReveal 2s cubic-bezier(.25,.6,.3,1) .2s both; }
+/* 매출 차트: 축·그리드는 즉시 고정, 두 선만 왼→오로 그려짐 */
+.revchart-wrap { width:100%; max-height:265px; display:flex; justify-content:center; }
+.revchart { width:100%; max-height:265px; height:auto; overflow:visible; }
+.revchart .rev-grid { stroke:#D9E1EA; stroke-width:1; stroke-dasharray:3 4; }
+.revchart .rev-xaxis { stroke:#2E6FF0; stroke-width:2; }
+.revchart .rev-xaxis-arrow { fill:#2E6FF0; }
+.revchart .rev-xnode { fill:#fff; stroke:#2E6FF0; stroke-width:1.6; }
+.revchart .rev-year { fill:#16283C; font-size:15px; font-weight:700; text-anchor:middle;
+  font-family:Pretendard,sans-serif; }
+.revchart .rev-yl-blue { fill:#2E6FF0; font-size:13px; font-weight:700; text-anchor:end;
+  font-family:Pretendard,sans-serif; }
+.revchart .rev-yl-green { fill:#1B7A2E; font-size:13px; font-weight:700; text-anchor:start;
+  font-family:Pretendard,sans-serif; }
+.revchart .rev-line { fill:none; stroke-width:2.6; stroke-linecap:round; stroke-linejoin:round;
+  stroke-dasharray:1; stroke-dashoffset:1; }
+.revchart .rev-line.b { stroke:#2E6FF0; }
+.revchart .rev-line.g { stroke:#1B7A2E; }
+.revchart .rev-dot { opacity:0; }
+.revchart .rev-dot.b { fill:#2E6FF0; }
+.revchart .rev-dot.g { fill:#1B7A2E; }
+/* 5페이지 진입(.slide.on) 시점에 선이 왼→오로 그려지고 마커가 순차 등장 */
+.slide.on .revchart .rev-line { animation:revDraw 1.7s cubic-bezier(.4,0,.2,1) .3s forwards; }
+.slide.on .revchart .rev-line.g { animation-delay:.5s; }
+.slide.on .revchart .rev-dot { animation:revDot .35s ease-out forwards; }
+@keyframes revDraw { to { stroke-dashoffset:0; } }
+@keyframes revDot { from { opacity:0; } to { opacity:1; } }
 @keyframes riseReveal {
   from { clip-path:inset(0 100% 0 0); transform:translateY(14px); opacity:.3; }
   to { clip-path:inset(0 0 0 0); transform:translateY(0); opacity:1; }
@@ -158,7 +206,10 @@ html,body { width:100%; height:100%; background:#171B21; overflow:hidden;
   font-size:15px; font-weight:600; color:#1D5FD1; background:#EDF3FC;
   border:1px solid rgba(29,95,209,.25); border-radius:999px; padding:4px 14px; letter-spacing:0; }
 .demo-url::before { content:""; width:8px; height:8px; border-radius:50%; background:#2E9E5B;
-  box-shadow:0 0 0 3px rgba(46,158,91,.18); animation:liveDot 1.6s ease-in-out infinite; }
+  box-shadow:0 0 0 3px rgba(46,158,91,.18); animation:liveDot 1.6s ease-in-out infinite; flex:0 0 auto; }
+/* iframe 로딩 중: 주황 점 + "불러오는중" */
+.demo-url.loading { color:#B5761A; background:#FDF4E3; border-color:rgba(200,140,30,.35); }
+.demo-url.loading::before { background:#F5A623; box-shadow:0 0 0 3px rgba(245,166,35,.2); }
 @keyframes liveDot { 0%,100% { opacity:1; } 50% { opacity:.35; } }
 /* 조직도 강조: aspect-ratio 래퍼로 이미지 실제 표시 영역과 % 좌표를 일치시킴 */
 .org-hl-wrap { position:relative; height:100%; max-width:100%; aspect-ratio:1351/513; }
@@ -185,7 +236,7 @@ html,body { width:100%; height:100%; background:#171B21; overflow:hidden;
 .partner-img { width:100%; height:100%; object-fit:contain; min-height:0; }
 /* 함께 일하는 기관: 기관 그룹별 제목 라벨 + 로고 이미지 */
 .inst-group { flex:1; min-height:0; align-self:stretch; display:flex; flex-direction:column; gap:14px; }
-.inst-group + .inst-group { margin-top:20px; padding-top:20px; border-top:1px dashed #D4DAE2; }
+.inst-group + .inst-group { margin-top:24px; padding-top:24px; border-top:1px dashed #D4DAE2; }
 .inst-h { display:inline-flex; align-items:center; gap:10px; align-self:flex-start;
   background:#EDF3FC; color:#1D5FD1; font-size:18px; font-weight:700; letter-spacing:-.2px;
   border:1px solid rgba(29,95,209,.28); border-radius:999px; padding:7px 22px; }
@@ -267,16 +318,48 @@ html,body { width:100%; height:100%; background:#171B21; overflow:hidden;
   font-weight:700; letter-spacing:1px; }
 .ch-corp { position:absolute; left:96px; bottom:72px; font-size:17px; color:#8E9AA7;
   font-weight:700; letter-spacing:.3px; }
+/* 추가 페이지: 그 외 수행 사업 사례 (좌 전문성 / 우 사업내역) */
+.exp-list { display:flex; flex-direction:column; justify-content:space-around; flex:1; min-height:0; padding:4px 0; }
+.exp-item { display:flex; align-items:center; gap:22px;
+  background:linear-gradient(135deg,#FFFFFF,#F7FAFE); border:1px solid rgba(29,95,209,.08);
+  border-radius:12px; padding:15px 20px;
+  box-shadow:0 2px 5px rgba(22,40,60,.05), 0 8px 20px rgba(29,95,209,.06);
+  transition:transform .2s cubic-bezier(.16,1,.3,1), box-shadow .2s; }
+.exp-item:hover { transform:translateY(-2px);
+  box-shadow:0 4px 10px rgba(22,40,60,.08), 0 14px 30px rgba(29,95,209,.12); }
+.exp-icon { width:104px; height:92px; object-fit:contain; flex:0 0 auto; }
+.exp-txt { display:flex; flex-direction:column; gap:5px; }
+.exp-title { font-size:23px; font-weight:700; color:#1D5FD1; letter-spacing:-.5px;
+  font-family:'NanumGothicBold',sans-serif; }
+.exp-desc { font-size:16px; color:#5A6B7C; line-height:1.55; letter-spacing:-.3px;
+  font-family:'NanumGothicBold',sans-serif; }
+.proj-list { display:flex; flex-direction:column; justify-content:center; flex:1; min-height:0; gap:30px; padding:6px 0 6px; }
+.proj-item { border:1px solid #C9D6E5; border-radius:8px; padding:9px 18px;
+  font-size:18px; color:#26374A; background:#fff;
+  font-family:'NanumGothicBold',sans-serif; }
+.proj-item b { color:#1D5FD1; font-weight:700; font-family:'Pretendard',sans-serif; }
+.proj-more { text-align:center; font-size:22px; font-weight:700; color:#7A8797; margin-top:6px; letter-spacing:4px; }
+/* 지구를 감싸는 궤도 + 궤도를 따라 흐르는 빛 세그먼트 */
+.orbit { position:absolute; inset:0; width:100%; height:100%; z-index:2;
+  pointer-events:none; overflow:visible; }
+.orbit .orbit-base { fill:none; stroke:#FFFFFF; stroke-width:1.6; opacity:.22;
+  filter:drop-shadow(0 0 2px rgba(120,180,255,.4)); }
+.orbit .orbit-glow { fill:none; stroke:#FFFFFF; stroke-width:3; stroke-linecap:round;
+  stroke-dasharray:200 2587; stroke-dashoffset:2787;
+  filter:drop-shadow(0 0 4px rgba(255,255,255,.9)) drop-shadow(0 0 12px rgba(150,200,255,.7));
+  animation:orbitFlow 5s linear infinite; }
+.orbit .orbit-glow2 { animation-delay:-2.5s; }
+@keyframes orbitFlow { to { stroke-dashoffset:0; } }
 
 /* ---------- 내비게이션 UI ---------- */
-.navbtn { position:fixed; bottom:6px; z-index:10; width:40px; height:40px; border-radius:50%;
+.navbtn { position:fixed; bottom:8px; z-index:10; width:30px; height:28px; border-radius:50%;
   border:1px solid rgba(255,255,255,.25); background:rgba(22,40,60,.35); color:#fff;
-  font-size:17px; cursor:pointer; }
+  font-size:14px; cursor:pointer; }
 .navbtn:hover { background:#1D5FD1; border-color:#1D5FD1; }
-#prev { left:calc(50% - 100px); } #next { left:calc(50% + 60px); }
-#counter { position:fixed; left:50%; transform:translateX(-50%); bottom:6px; z-index:10; height:40px;
+#prev { left:calc(50% - 84px); } #next { left:calc(50% + 52px); }
+#counter { position:fixed; left:50%; transform:translateX(-50%); bottom:8px; z-index:10; height:28px;
   display:flex; align-items:center; color:#fff; background:rgba(22,40,60,.6);
-  padding:0 18px; border-radius:20px; font-size:18px; font-weight:600; letter-spacing:1px; }
+  padding:0 15px; border-radius:16px; font-size:15px; font-weight:600; letter-spacing:1px; }
 
 /* ---------- 웹 배포용 모션 ---------- */
 #pbar { position:fixed; top:0; left:0; height:4px; width:0; z-index:20;
@@ -315,8 +398,18 @@ html,body { width:100%; height:100%; background:#171B21; overflow:hidden;
 </section>
 
 <section class="slide chapter">
+  <svg class="orbit" viewBox="0 0 1920 1080" preserveAspectRatio="none" aria-hidden="true">
+    <g transform="rotate(-26 1520 350)">
+      <ellipse class="orbit-base" cx="1520" cy="350" rx="640" ry="188"/>
+      <ellipse class="orbit-glow" cx="1520" cy="350" rx="640" ry="188"/>
+    </g>
+    <g transform="rotate(30 1520 350)">
+      <ellipse class="orbit-base" cx="1520" cy="350" rx="640" ry="188"/>
+      <ellipse class="orbit-glow orbit-glow2" cx="1520" cy="350" rx="640" ry="188"/>
+    </g>
+  </svg>
   <div class="ch-no">01</div>
-  <div class="ch-title">지오시스템리서치 소개</div>
+  <div class="ch-title typing-title" data-text="지오시스템리서치 소개"><span class="typing-text"></span><span class="typing-cursor" aria-hidden="true">|</span></div>
   <div class="ch-line"></div>
   <div class="ch-sub">해양분야 전문기업</div>
   <div class="ch-corp">GeoSystem Research Corporation</div>
@@ -362,15 +455,15 @@ html,body { width:100%; height:100%; background:#171B21; overflow:hidden;
     <div class="logo"></div>
   </div>
   <div class="content"><div class="banner">부이자료, 위성자료, 수치모델, AI를 이용한 <b>해양 예측시스템</b>을 운영하고 있으며, 각종 해양현상(수위, 유동, 수온, 파랑 등)을 예측함</div><div class="cols" style="grid-template-columns:1fr 1fr;flex:1">
-  <div class="card" style=""><div class="card-h">주요 업무</div><img class="work-full-img" src="assets/work_items_full.png" alt="주요 업무"></div>
-  <div class="card" style="padding:22px 30px"><div class="card-h">함께 일하는 기관</div>
-    <div class="inst-group">
+  <div class="card" style=""><div class="card-h">주요 업무</div><img class="work-full-img" src="assets/work_items_full.png?v=2" alt="주요 업무"></div>
+  <div class="card" style="padding:22px 30px"><div class="card-h" style="margin-bottom:35px">함께 일하는 기관</div>
+    <div class="inst-group" style="flex:1.2">
       <div class="inst-h">중앙 행정 기관</div>
       <div class="inst-imgbox"><img src="assets/gov_central.png" alt="중앙 행정 기관"></div>
     </div>
-    <div class="inst-group">
+    <div class="inst-group" style="flex:1">
       <div class="inst-h">공공 기관</div>
-      <div class="inst-imgbox"><img src="assets/gov_public.png" alt="공공 기관"></div>
+      <div class="inst-imgbox"><img src="assets/gov_public.png?v=2" alt="공공 기관"></div>
     </div>
   </div>
 </div></div>
@@ -381,17 +474,27 @@ html,body { width:100%; height:100%; background:#171B21; overflow:hidden;
   <div class="head">
     <div>
       <div class="kicker">지오시스템리서치 소개 (예보사업부)</div>
-      <div class="title">예보사업부의 발전<span class="subtitle malgun-subtitle"  style="font-size:0.5em;">고전 모델부터 최신 모델까지</span></div>
+      <div class="title">예보사업부의 발전<span class="subtitle malgun-subtitle">고전 모델부터 최신 모델까지</span></div>
     </div>
     <div class="logo"></div>
   </div>
-  <div class="content"><div class="card" style="align-items:center"><div class="card-h">총 매출·순이익 성장 추이<span style="font-size:15px;font-weight:400;color:#7A8797;margin-left:10px">(예보사업부)</span><span class='legend'><i class='sw b'></i>총매출(억) <i class='sw g'></i>순이익(억)</span></div><img class="fig rise-reveal" style="max-height:265px" src="assets/rev_chart.png" alt="rev_chart"></div><div class="card" style="flex:1;margin-top:16px"><div class="card-h">기술 발전 로드맵</div><div class="roadmap"><div class="hrow"><div class="hlabel">시계열 예측</div><div class="hstage"><b>통계 기반</b><span>ARIMA 등</span></div><span class="harrow">▶</span><div class="hstage"><b>머신러닝</b><span>Random Forest · XGBoost</span></div><span class="harrow">▶</span><div class="hstage"><b>딥러닝</b><span>LSTM · GRU</span></div><span class="harrow">▶</span><div class="hstage"><b>최신 모델</b><span>Transformer · GNN · FEDformer</span></div></div><div class="hrow"><div class="hlabel">CV 모델</div><div class="hstage"><b>적용 시작</b><span>CNN Backbone</span></div><span class="harrow">▶</span><div class="hstage"><b>활용 확대</b><span>Fast R-CNN · YOLO</span></div><span class="harrow">▶</span><div class="hstage"><b>고도화</b><span>ViT · DETR · SAM</span></div></div><div class="hrow"><div class="hlabel">LLM 모델</div><div class="hstage"><b>적용 시작</b><span>Qwen · LLaMA · Gemma · GLM (번역 · 코딩 · 문서검색 · 업무지원)</span></div></div><div class="hrow"><div class="hlabel">수치 모델</div><div class="hstage"><b>도입 시작</b><span>NEMO 도입</span></div><span class="harrow">▶</span><div class="hstage"><b>적용 확대</b><span>SCHISM 도입</span></div><span class="harrow">▶</span><div class="hstage"><b>도입 확대</b><span>대기 · 해양 · 파랑 모델</span></div></div><div class="hrow"><div class="hlabel">빅데이터</div><div class="hstage"><b>데이터 수집</b><span>관측 · 센서 · 운영</span></div><span class="harrow">▶</span><div class="hstage"><b>데이터 통합</b><span>ETL · DB · 시계열</span></div><span class="harrow">▶</span><div class="hstage"><b>활용 확대</b><span>실시간 처리 · AI 학습</span></div><span class="harrow">▶</span><div class="hstage"><b>플랫폼 고도화</b><span>Data Lake · MLOps · AI Agent</span></div></div><div class="hrow"><div class="hlabel">해양위성</div><div class="hstage"><b>도입 시작</b><span>위성 R&D 용역과제</span></div><span class="harrow">▶</span><div class="hstage"><b>융복합 기술 도입</b><span>위성 AI 융복합</span></div><span class="harrow">▶</span><div class="hstage"><b>활용 확대</b><span>분석 · 모니터링 확대</span></div><span class="harrow">▶</span><div class="hstage"><b>사업 고도화</b><span>위성 관련 사업 확대</span></div></div></div></div></div>
+  <div class="content"><div class="card" style="align-items:center"><div class="card-h">총 매출·순이익 성장 추이<span style="font-size:15px;font-weight:400;color:#7A8797;margin-left:10px">(예보사업부)</span><span class='legend'><i class='sw b'></i>총매출(억) <i class='sw g'></i>순이익(억)</span></div><div class="revchart-wrap"><svg class="revchart" viewBox="0 0 1000 260" preserveAspectRatio="xMidYMid meet" role="img" aria-label="총 매출·순이익 성장 추이"><line class="rev-grid" x1="70.0" y1="26" x2="70.0" y2="232"/><line class="rev-grid" x1="156.0" y1="26" x2="156.0" y2="232"/><line class="rev-grid" x1="242.0" y1="26" x2="242.0" y2="232"/><line class="rev-grid" x1="328.0" y1="26" x2="328.0" y2="232"/><line class="rev-grid" x1="414.0" y1="26" x2="414.0" y2="232"/><line class="rev-grid" x1="500.0" y1="26" x2="500.0" y2="232"/><line class="rev-grid" x1="586.0" y1="26" x2="586.0" y2="232"/><line class="rev-grid" x1="672.0" y1="26" x2="672.0" y2="232"/><line class="rev-grid" x1="758.0" y1="26" x2="758.0" y2="232"/><line class="rev-grid" x1="844.0" y1="26" x2="844.0" y2="232"/><line class="rev-grid" x1="930.0" y1="26" x2="930.0" y2="232"/><line class="rev-xaxis" x1="52" y1="25" x2="952" y2="25"/><path class="rev-xaxis-arrow" d="M952,20 L964,25 L952,30 Z"/><text class="rev-year" x="70.0" y="15">2016</text><circle class="rev-xnode" cx="70.0" cy="25" r="4"/><text class="rev-year" x="156.0" y="15">2017</text><circle class="rev-xnode" cx="156.0" cy="25" r="4"/><text class="rev-year" x="242.0" y="15">2018</text><circle class="rev-xnode" cx="242.0" cy="25" r="4"/><text class="rev-year" x="328.0" y="15">2019</text><circle class="rev-xnode" cx="328.0" cy="25" r="4"/><text class="rev-year" x="414.0" y="15">2020</text><circle class="rev-xnode" cx="414.0" cy="25" r="4"/><text class="rev-year" x="500.0" y="15">2021</text><circle class="rev-xnode" cx="500.0" cy="25" r="4"/><text class="rev-year" x="586.0" y="15">2022</text><circle class="rev-xnode" cx="586.0" cy="25" r="4"/><text class="rev-year" x="672.0" y="15">2023</text><circle class="rev-xnode" cx="672.0" cy="25" r="4"/><text class="rev-year" x="758.0" y="15">2024</text><circle class="rev-xnode" cx="758.0" cy="25" r="4"/><text class="rev-year" x="844.0" y="15">2025</text><circle class="rev-xnode" cx="844.0" cy="25" r="4"/><text class="rev-year" x="930.0" y="15">2026</text><circle class="rev-xnode" cx="930.0" cy="25" r="4"/><text class="rev-yl-blue" x="46" y="236.0">0</text><text class="rev-yl-blue" x="46" y="204.8">10</text><text class="rev-yl-blue" x="46" y="173.7">20</text><text class="rev-yl-blue" x="46" y="142.5">30</text><text class="rev-yl-blue" x="46" y="111.3">40</text><text class="rev-yl-blue" x="46" y="80.2">50</text><text class="rev-yl-blue" x="46" y="49.0">60</text><text class="rev-yl-green" x="958" y="236.0">0</text><text class="rev-yl-green" x="958" y="204.8">5</text><text class="rev-yl-green" x="958" y="173.7">10</text><text class="rev-yl-green" x="958" y="142.5">15</text><text class="rev-yl-green" x="958" y="111.3">20</text><text class="rev-yl-green" x="958" y="80.2">25</text><text class="rev-yl-green" x="958" y="49.0">30</text><polyline class="rev-line b" pathLength="1" points="70.0,185.2 156.0,168.1 242.0,126.0 328.0,144.7 414.0,155.6 500.0,132.3 586.0,126.0 672.0,115.1 758.0,88.6 844.0,84.0 930.0,57.5"/><polyline class="rev-line g" pathLength="1" points="70.0,222.7 156.0,214.9 242.0,199.3 328.0,202.4 414.0,219.5 500.0,194.6 586.0,202.4 672.0,193.0 758.0,168.1 844.0,163.4 930.0,151.0"/><circle class="rev-dot b" cx="70.0" cy="185.2" r="4.2" style="animation-delay:0.35s"/><circle class="rev-dot g" cx="70.0" cy="222.7" r="4.2" style="animation-delay:0.50s"/><circle class="rev-dot b" cx="156.0" cy="168.1" r="4.2" style="animation-delay:0.48s"/><circle class="rev-dot g" cx="156.0" cy="214.9" r="4.2" style="animation-delay:0.63s"/><circle class="rev-dot b" cx="242.0" cy="126.0" r="4.2" style="animation-delay:0.61s"/><circle class="rev-dot g" cx="242.0" cy="199.3" r="4.2" style="animation-delay:0.76s"/><circle class="rev-dot b" cx="328.0" cy="144.7" r="4.2" style="animation-delay:0.74s"/><circle class="rev-dot g" cx="328.0" cy="202.4" r="4.2" style="animation-delay:0.89s"/><circle class="rev-dot b" cx="414.0" cy="155.6" r="4.2" style="animation-delay:0.87s"/><circle class="rev-dot g" cx="414.0" cy="219.5" r="4.2" style="animation-delay:1.02s"/><circle class="rev-dot b" cx="500.0" cy="132.3" r="4.2" style="animation-delay:1.00s"/><circle class="rev-dot g" cx="500.0" cy="194.6" r="4.2" style="animation-delay:1.15s"/><circle class="rev-dot b" cx="586.0" cy="126.0" r="4.2" style="animation-delay:1.13s"/><circle class="rev-dot g" cx="586.0" cy="202.4" r="4.2" style="animation-delay:1.28s"/><circle class="rev-dot b" cx="672.0" cy="115.1" r="4.2" style="animation-delay:1.26s"/><circle class="rev-dot g" cx="672.0" cy="193.0" r="4.2" style="animation-delay:1.41s"/><circle class="rev-dot b" cx="758.0" cy="88.6" r="4.2" style="animation-delay:1.39s"/><circle class="rev-dot g" cx="758.0" cy="168.1" r="4.2" style="animation-delay:1.54s"/><circle class="rev-dot b" cx="844.0" cy="84.0" r="4.2" style="animation-delay:1.52s"/><circle class="rev-dot g" cx="844.0" cy="163.4" r="4.2" style="animation-delay:1.67s"/><circle class="rev-dot b" cx="930.0" cy="57.5" r="4.2" style="animation-delay:1.65s"/><circle class="rev-dot g" cx="930.0" cy="151.0" r="4.2" style="animation-delay:1.80s"/></svg></div></div><div class="card" style="flex:1;margin-top:16px"><div class="card-h">기술 발전 로드맵</div><div class="roadmap"><div class="hrow"><div class="hlabel">시계열 예측</div><div class="hstage"><b>통계 기반</b><span>ARIMA 등</span></div><span class="harrow">▶</span><div class="hstage"><b>머신러닝</b><span>Random Forest · XGBoost</span></div><span class="harrow">▶</span><div class="hstage"><b>딥러닝</b><span>LSTM · GRU</span></div><span class="harrow">▶</span><div class="hstage"><b>최신 모델</b><span>Transformer · GNN · FEDformer</span></div></div><div class="hrow"><div class="hlabel">CV 모델</div><div class="hstage"><b>적용 시작</b><span>CNN Backbone</span></div><span class="harrow">▶</span><div class="hstage"><b>활용 확대</b><span>Fast R-CNN · YOLO</span></div><span class="harrow">▶</span><div class="hstage"><b>고도화</b><span>ViT · DETR · SAM</span></div></div><div class="hrow"><div class="hlabel">LLM 모델</div><div class="hstage"><b>적용 시작</b><span>Qwen · LLaMA · Gemma · GLM (번역 · 코딩 · 문서검색 · 업무지원)</span></div></div><div class="hrow"><div class="hlabel">수치 모델</div><div class="hstage"><b>도입 시작</b><span>NEMO 도입</span></div><span class="harrow">▶</span><div class="hstage"><b>적용 확대</b><span>SCHISM 도입</span></div><span class="harrow">▶</span><div class="hstage"><b>도입 확대</b><span>대기 · 해양 · 파랑 모델</span></div></div><div class="hrow"><div class="hlabel">빅데이터</div><div class="hstage"><b>데이터 수집</b><span>관측 · 센서 · 운영</span></div><span class="harrow">▶</span><div class="hstage"><b>데이터 통합</b><span>ETL · DB · 시계열</span></div><span class="harrow">▶</span><div class="hstage"><b>활용 확대</b><span>실시간 처리 · AI 학습</span></div><span class="harrow">▶</span><div class="hstage"><b>플랫폼 고도화</b><span>Data Lake · MLOps · AI Agent</span></div></div><div class="hrow"><div class="hlabel">해양위성</div><div class="hstage"><b>도입 시작</b><span>위성 R&D 용역과제</span></div><span class="harrow">▶</span><div class="hstage"><b>융복합 기술 도입</b><span>위성 AI 융복합</span></div><span class="harrow">▶</span><div class="hstage"><b>활용 확대</b><span>분석 · 모니터링 확대</span></div><span class="harrow">▶</span><div class="hstage"><b>사업 고도화</b><span>위성 관련 사업 확대</span></div></div></div></div></div>
   <div class="foot"><span>GeoSystem Research Corporation</span><span class="pg"></span></div>
 </section>
 
 <section class="slide chapter">
+  <svg class="orbit" viewBox="0 0 1920 1080" preserveAspectRatio="none" aria-hidden="true">
+    <g transform="rotate(-26 1520 350)">
+      <ellipse class="orbit-base" cx="1520" cy="350" rx="640" ry="188"/>
+      <ellipse class="orbit-glow" cx="1520" cy="350" rx="640" ry="188"/>
+    </g>
+    <g transform="rotate(30 1520 350)">
+      <ellipse class="orbit-base" cx="1520" cy="350" rx="640" ry="188"/>
+      <ellipse class="orbit-glow orbit-glow2" cx="1520" cy="350" rx="640" ry="188"/>
+    </g>
+  </svg>
   <div class="ch-no">02</div>
-  <div class="ch-title">부이자료 활용 사례</div>
+  <div class="ch-title typing-title" data-text="부이자료 활용 사례"><span class="typing-text"></span><span class="typing-cursor" aria-hidden="true">|</span></div>
   <div class="ch-line"></div>
   <div class="ch-sub">부이자료 기반 서비스 및 정책 지원</div>
   <div class="ch-corp">GeoSystem Research Corporation</div>
@@ -442,7 +545,7 @@ html,body { width:100%; height:100%; background:#171B21; overflow:hidden;
  </div>
  <div>
   <div class="mini-h">대표수위계 해측</div>
-  <img class="fig" style="width:90%" src="assets/qc_sea_repr.png" alt="대표수위계 해측">
+  <img class="fig" style="width:85%" src="assets/qc_sea_repr.png" alt="대표수위계 해측">
  </div>
 </div>
 </div></div>
@@ -461,7 +564,7 @@ html,body { width:100%; height:100%; background:#171B21; overflow:hidden;
   </div>
   <div class="content">
     <div class="card" style="flex:1">
-      <div class="card-h">AI QC 대시보드 (라이브 시연)<span class="demo-url">http://112.121.26.163:8020</span>
+      <div class="card-h">AI QC 대시보드 (라이브 시연)<span class="demo-url loading" data-url="http://112.121.26.163:8020">불러오는중</span>
         <span style="margin-left:auto;display:inline-flex;align-items:center;gap:12px">
           <span style="font-size:15px;font-weight:400;color:#7A8797;text-align:right;line-height:1.4">휴대폰으로<br>바로 접속</span>
           <img src="assets/qc_server_qr.png" alt="QC 대시보드 QR" style="height:104px;border:1px solid #E3E8EE;border-radius:10px;padding:6px;background:#fff">
@@ -648,16 +751,16 @@ html,body { width:100%; height:100%; background:#171B21; overflow:hidden;
   <div class="card" style=""><div class="card-h">월별 성능지표 (전 관측소 평균)</div>
 <table class="tbl" style="width:100%">
  <tr><th colspan="2">구분</th><th>RMSE(cm)</th><th>MAPE(%)</th></tr>
- <tr><td rowspan="2">2024.01</td><td class="acc">JMA</td><td class="up">6.83</td><td class="up">5.13</td></tr>
- <tr class="sub"><td>GFS</td><td>7.83</td><td>5.73</td></tr>
- <tr><td rowspan="2">2024.07</td><td class="acc">JMA</td><td class="up">6.63</td><td class="up">3.47</td></tr>
- <tr class="sub"><td>GFS</td><td>7.81</td><td>4.37</td></tr>
+ <tr><td rowspan="2" class="gubun">2024.01</td><td class="gubun">JMA</td><td class="up">6.83</td><td class="up">5.13</td></tr>
+ <tr class="sub"><td class="gubun">GFS</td><td>7.83</td><td>5.73</td></tr>
+ <tr><td rowspan="2" class="gubun">2024.07</td><td class="gubun">JMA</td><td class="up">6.63</td><td class="up">3.47</td></tr>
+ <tr class="sub"><td class="gubun">GFS</td><td>7.81</td><td>4.37</td></tr>
 </table></div>
   <div class="card" style=""><div class="card-h">종합 성능지표 (전 관측소 평균)</div>
 <table class="tbl" style="width:100%">
  <tr><th>구분</th><th>RMSE(cm)</th><th>MAPE(%)</th><th>Peak Acc.(%)</th><th>Peak Err.(cm)</th></tr>
- <tr><td class="acc">JMA</td><td class="up">6.49</td><td class="up">3.6</td><td class="up">88.40</td><td class="up">-3.70</td></tr>
- <tr><td>GFS</td><td>8.06</td><td>4.66</td><td>87.70</td><td>-4.20</td></tr>
+ <tr><td class="gubun">JMA</td><td class="up">6.49</td><td class="up">3.6</td><td class="up">88.40</td><td class="up">-3.70</td></tr>
+ <tr class="sub"><td class="gubun">GFS</td><td>8.06</td><td>4.66</td><td>87.70</td><td>-4.20</td></tr>
 </table></div>
 </div><div class="card" style="flex:1;margin-top:16px"><div class="card-h">태풍시기 조위 잔차 예측 결과 비교 (2023년 태풍 카눈)</div>
 <div class="figrow">
@@ -668,44 +771,87 @@ html,body { width:100%; height:100%; background:#171B21; overflow:hidden;
 <div class="note">회색 선 : 관측(True) · 파란 선 : 예측(Predicted) · 붉은 음영 : 태풍 기간</div></div></div>
   <div class="foot"><span>GeoSystem Research Corporation</span><span class="pg"></span></div>
 </section>
+<section class="slide">
+  <div class="head">
+    <div>
+      <div class="kicker">부이자료 활용 사례</div>
+      <div class="title">그 외 수행 사업 사례<span class="subtitle">폭넓은 사업 수행 경험 보유</span></div>
+    </div>
+    <div class="logo"></div>
+  </div>
+  <div class="content"><div class="cols" style="grid-template-columns:1fr 1fr;flex:1">
+  <div class="card"><div class="card-h">부이 서비스를 위한 다양한 경험 및 전문성 보유</div>
+    <div class="exp-list">
+      <div class="exp-item"><img class="exp-icon" src="assets/exp_icon1.png?v=3" alt="">
+        <div class="exp-txt"><div class="exp-title">빅데이터 관리</div>
+        <div class="exp-desc">· SQL 기반 데이터베이스 설계<br>· Hadoop 생태계를 활용한 대용량 데이터 분산 저장 및 처리<br>· 데이터 수집-정제-적재 파이프라인 운영</div></div></div>
+      <div class="exp-item"><img class="exp-icon" src="assets/exp_icon2.png?v=3" alt="">
+        <div class="exp-txt"><div class="exp-title">시계열 데이터 분석 및 예측</div>
+        <div class="exp-desc">· 시계열 데이터 특성을 반영한 AI/ML 모델 설계<br>· 이상치 탐지 알고리즘 개발<br>· 결측 구간 보간 기법 개발</div></div></div>
+      <div class="exp-item"><img class="exp-icon" src="assets/exp_icon3.png?v=3" alt="">
+        <div class="exp-txt"><div class="exp-title">영상 데이터 탐지 및 분류</div>
+        <div class="exp-desc">· 영상 및 이미지 기반 딥러닝 객체 탐지·분류 모델 개발<br>· 이안류 탐지를 통한 해양 안전 모니터링<br>· 해무 탐지 및 분류를 통한 기상·해양 상황 감시</div></div></div>
+      <div class="exp-item"><img class="exp-icon" src="assets/exp_icon4.png?v=3" alt="">
+        <div class="exp-txt"><div class="exp-title">플랫폼 및 시스템 구축</div>
+        <div class="exp-desc">· 데이터 수집부터 분석, 시각화까지 아우르는 플랫폼 개발<br>· 웹 및 서버 기반 시스템 설계 및 구축<br>· 운영 중인 시스템의 안정적인 유지보수 및 장애 대응</div></div></div>
+    </div>
+  </div>
+  <div class="card"><div class="card-h">사업 수행 내역</div>
+    <div class="proj-list">
+      <div class="proj-item"><b>[한국수자원공사]</b> 낙동강 보 수질오염사고 예방을 위한 조류 예측모델 개발</div>
+      <div class="proj-item"><b>[한국수자원공사]</b> 동해연안 원전주변 해양환경 관리시스템 운영</div>
+      <div class="proj-item"><b>[국립해양조사원]</b> KHOA SST 준실시간 예측</div>
+      <div class="proj-item"><b>[국립해양조사원]</b> 해양 양식장 및 선박을 실시간 탐지하고 분류</div>
+      <div class="proj-item"><b>[국립수산과학원]</b> e-푸른바다 홈페이지 유지관리</div>
+      <div class="proj-item"><b>[국립수산과학원]</b> 주 평균 수온 예측 모델 개발</div>
+      <div class="proj-item"><b>[해양수산부]</b> 해양수산정보 공동활용 체계 구축</div>
+      <div class="proj-item"><b>[해양수산부]</b> 이안류, 해무탐지 모델 개발 및 현업화</div>
+    </div>
+  </div>
+  </div></div>
+  <div class="foot"><span>GeoSystem Research Corporation</span><span class="pg"></span></div>
+</section>
+
 
 <section class="slide chapter">
+  <svg class="orbit" viewBox="0 0 1920 1080" preserveAspectRatio="none" aria-hidden="true">
+    <g transform="rotate(-26 1520 350)">
+      <ellipse class="orbit-base" cx="1520" cy="350" rx="640" ry="188"/>
+      <ellipse class="orbit-glow" cx="1520" cy="350" rx="640" ry="188"/>
+    </g>
+    <g transform="rotate(30 1520 350)">
+      <ellipse class="orbit-base" cx="1520" cy="350" rx="640" ry="188"/>
+      <ellipse class="orbit-glow orbit-glow2" cx="1520" cy="350" rx="640" ry="188"/>
+    </g>
+  </svg>
   <div class="ch-no">03</div>
-  <div class="ch-title">AX 플랫폼</div>
+  <div class="ch-title typing-title" style="white-space:nowrap;max-width:none" data-text="모니터링 플랫폼"><span class="typing-text"></span><span class="typing-cursor" aria-hidden="true">|</span></div>
   <div class="ch-line"></div>
-  <div class="ch-sub">AI Transformation Platform</div>
+  <div class="ch-sub">해양 부이자료 통합관리 서비스</div>
   <div class="ch-corp">GeoSystem Research Corporation</div>
 </section>
 
 <section class="slide">
   <div class="head">
     <div>
-      <div class="kicker">AX 플랫폼</div>
-      <div class="title">Auto AI 플랫폼을 이용한 시계열 모델 예측<span class="subtitle">모델 학습</span></div>
+      <div class="kicker">모니터링 플랫폼</div>
+      <div class="title">해양부이 통합 모니터링 플랫폼<span class="subtitle">플랫폼 소개</span></div>
     </div>
     <div class="logo"></div>
   </div>
-  <div class="content"><div class="tags"><div class="tag-row"><span class="tag">목적</span><span class="tag-txt">전문 지식이 없는 사용자도 UI를 통해 쉽게 활용하는 AI 플랫폼 제공</span></div><div class="tag-row"><span class="tag">특징</span><span class="tag-txt">데이터를 손쉽게 구성하고 클릭 몇 번으로 AI 모델 학습 · 활용</span></div><div class="tag-row"><span class="tag">설정</span><span class="tag-txt">epoch, learning rate, optimizer 등 세부 학습 파라미터 조정 가능</span></div></div><div class="cols" style="grid-template-columns:1fr 560px;flex:1">
-  <div class="card" style="align-items:center;justify-content:center"><div class="card-h">AI플랫폼 시계열 모델 학습 화면</div><img class="fig" style="width:100%" src="assets/platform_train.png" alt="platform_train"></div>
-  <div class="card" style=""><div class="card-h">학습 절차 및 설정</div>
-<div class="mini-h">학습 절차</div>
-<div class="chips">
- <span class="cstep">학습 모델 선택</span><span class="carr">▶</span>
- <span class="cstep">학습 설정(Train Config)</span><span class="carr">▶</span>
- <span class="cstep">모델 학습</span><span class="carr">▶</span>
- <span class="cstep">Loss · log 표출</span><span class="carr">▶</span>
- <span class="cstep">모델 공유 / 예측모델 선정</span>
-</div>
-<div style="border-top:1px solid #E3E8EE;margin:26px 0 20px"></div>
-<div class="card-h">학습 파라미터</div>
-<div class="mini-h">학습 파라미터 설명</div>
+  <div class="content"><div class="tags"><div class="tag-row"><span class="tag">목적</span><span class="tag-txt">기관별로 흩어진 해양부이를 <b>하나의 지도</b>에서 통합 모니터링</span></div><div class="tag-row"><span class="tag">대상</span><span class="tag-txt">기상청 해양기상부이 · 파고부이 + 국립해양조사원 해양관측부이 <b>약 140개소</b></span></div><div class="tag-row"><span class="tag">구성</span><span class="tag-txt">수신상태 · 실시간 관측 · 시계열 · QC · 예측을 <b>단일 화면</b>에서 확인</span></div></div><div class="cols" style="grid-template-columns:1fr 620px;flex:1">
+  <div class="card" style="align-items:center;justify-content:center"><div class="card-h">통합 모니터링 화면<span class="legend">기관·종류별 마커 · 수신상태 색상 표시</span></div><img class="fig" style="width:100%" src="assets/buoy_platform_overview.png" alt="부이 모니터링 플랫폼 지도 화면"></div>
+  <div class="card" style=""><div class="card-h">주요 기능</div>
 <table class="tbl left small" style="width:100%">
- <tr><th style="width:190px">파라미터</th><th>설명</th></tr>
- <tr><th>epoch</th><td>데이터셋 반복 학습 수</td></tr>
- <tr><th>learning rate</th><td>모델의 최소 손실을 위한 학습량 매개변수</td></tr>
- <tr><th>optimizer</th><td>최소 손실을 위한 가중치 최적화 알고리즘</td></tr>
- <tr><th>loss function</th><td>예측값 · 실제값 비교(손실값) 계산 함수</td></tr>
-</table></div>
+ <tr><th style="width:150px">기능</th><th>설명</th></tr>
+ <tr><th>지도 모니터링</th><td>위성 · 라이트 · 다크 베이스맵에 부이 마커 표출<br>수신상태(정상 · 지연 · 미수신)를 색으로 구분</td></tr>
+ <tr><th>2D 필드 오버레이</th><td>바람장(JMA MSM 5.5km) · 수온장(NOAA RTOFS 1/12°)<br>정밀 해안선(GSHHG)으로 육지 · 섬 마스킹</td></tr>
+ <tr><th>시계열 · QC</th><td>파고 · 수온 · 풍속 · 기압 (1일 · 7일 · 30일 · 1년)<br>관측기관 QC + <b>알고리즘 AI-QC</b> 플래그 동시 표출</td></tr>
+ <tr><th>24시간 예측</th><td>관측 기반 합성 예측을 시계열에 오버레이</td></tr>
+ <tr><th>AI 어시스턴트</th><td>조회된 <b>실제 관측값으로만</b> 응답 — 환각 차단<br>대화 맥락 7일 보존</td></tr>
+</table>
+<div class="note">데이터 출처 — 기상청 API Hub, 국립해양조사원(공공데이터포털) </div>
+</div>
 </div></div>
   <div class="foot"><span>GeoSystem Research Corporation</span><span class="pg"></span></div>
 </section>
@@ -713,24 +859,22 @@ html,body { width:100%; height:100%; background:#171B21; overflow:hidden;
 <section class="slide">
   <div class="head">
     <div>
-      <div class="kicker">AX 플랫폼</div>
-      <div class="title">Auto AI 플랫폼을 이용한 시계열 모델 예측<span class="subtitle">모델 예측</span></div>
+      <div class="kicker">모니터링 플랫폼</div>
+      <div class="title">해양부이 통합 모니터링 플랫폼<span class="subtitle">라이브 시연</span></div>
     </div>
     <div class="logo"></div>
   </div>
-  <div class="content"><div class="cols" style="grid-template-columns:1fr 560px;flex:1">
-  <div class="card" style="align-items:center;justify-content:center"><div class="card-h">AI플랫폼 시계열 모델 예측 화면</div><img class="fig" style="width:100%" src="assets/platform_pred.png" alt="platform_pred"></div>
-  <div class="card" style=""><div class="card-h">예측 기능</div><div class="vcenter">
-<table class="tbl left" style="width:100%">
- <tr><th style="width:180px">기능</th><th>설명</th></tr>
- <tr><th>① 모델 조회</th><td>예측 모델 정보 조회 — 모델 변수, 학습 loss 등</td></tr>
- <tr><th>② 모델 선정</th><td>사용자간 공유된 학습 모델 중 예측 모델 선정</td></tr>
- <tr><th>③ 기간 선정</th><td>예측 기간 선택 후 예측 수행</td></tr>
- <tr><th>④ 결과 확인</th><td>모델별 결과값 테이블 · 그래프 표출</td></tr>
- <tr><th>⑤ 결과 저장</th><td>결과값 저장 기능</td></tr>
-</table></div></div>
-</div>
-<div class="banner check">✔&nbsp; 웹 기반의 딥러닝 모델 분석 플랫폼 — UI를 통해 <b>사용자가 직접 손쉽게 AI모델 활용 및 운영 가능</b></div></div>
+  <div class="content">
+    <div class="card" style="flex:1">
+      <div class="card-h">부이 모니터링 플랫폼 (라이브 시연)<span class="demo-url">http://27.112.246.50:8506</span>
+        <span style="margin-left:auto;display:inline-flex;align-items:center;gap:12px">
+          <span style="font-size:15px;font-weight:400;color:#7A8797;text-align:right;line-height:1.4">휴대폰으로<br>바로 접속</span>
+          <img src="assets/buoy_server_qr.png" alt="부이 모니터링 플랫폼 QR" style="height:104px;border:1px solid #E3E8EE;border-radius:10px;padding:6px;background:#fff">
+        </span>
+      </div>
+      <div class="demo-wrap"><iframe class="demo-frame" src="http://27.112.246.50:8506/" title="Buoy Monitoring Platform"></iframe></div>
+    </div>
+  </div>
   <div class="foot"><span>GeoSystem Research Corporation</span><span class="pg"></span></div>
 </section>
 </div>
@@ -752,6 +896,14 @@ html,body { width:100%; height:100%; background:#171B21; overflow:hidden;
     slide.querySelectorAll('iframe.demo-frame').forEach(function (f) {
       var base = f.dataset.src || f.getAttribute('src').split('?_ts=')[0];
       f.dataset.src = base;
+      // data-url 표시가 있는 데모(8페이지)만 로딩중 → 완료 상태 전환
+      var card = f.closest('.card');
+      var urlEl = card && card.querySelector('.demo-url[data-url]');
+      if (urlEl) {
+        // 페이지 로드가 아니라 내부 데이터 로딩 완료(postMessage)까지 '불러오는중' 유지
+        urlEl.classList.add('loading');
+        urlEl.textContent = '데이터 불러오는 중';
+      }
       f.src = base + (base.indexOf('?') > -1 ? '&' : '?') + '_ts=' + Date.now();
     });
   }
@@ -762,31 +914,35 @@ html,body { width:100%; height:100%; background:#171B21; overflow:hidden;
     counter.textContent = (cur + 1) + ' / ' + n;
     document.getElementById('pbar').style.width = (((cur + 1) / n) * 100) + '%';
     if (cur !== prev) reloadDemos(slides[cur]);
+    playTyping(slides[cur]);
   }
   function fit() {
     var s = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
     document.getElementById('stage').style.transform =
       'translate(-50%,-50%) scale(' + s + ')';
   }
-  function startTitleTyping() {
-    var title = document.querySelector('.typing-title');
-    if (!title || title.dataset.typed === '1') return;
+  var typingTimers = [];
+  function playTyping(slide) {
+    var title = slide.querySelector('.typing-title');
+    if (!title) return;
     var textEl = title.querySelector('.typing-text');
     var fullText = title.getAttribute('data-text') || '';
+    // 챕터 대제목은 대기 없이 바로 타이핑, 표지는 1.2s 후
+    var delay = slide.classList.contains('chapter') ? 0 : 1200;
+    typingTimers.forEach(clearTimeout); typingTimers = [];
     var idx = 0;
-    title.dataset.typed = '1';
     textEl.textContent = '';
-    window.setTimeout(function typeNext() {
+    typingTimers.push(window.setTimeout(function typeNext() {
       textEl.textContent = fullText.slice(0, idx);
       if (idx < fullText.length) {
         idx += 1;
-        window.setTimeout(typeNext, 115);
+        typingTimers.push(window.setTimeout(typeNext, 115));
       }
-    }, 1200);
+    }, delay));
   }
   document.addEventListener('keydown', function (e) {
     if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'PageDown') { e.preventDefault(); show(cur + 1); }
-    else if (e.key === 'ArrowLeft' || e.key === 'PageUp') { e.preventDefault(); show(cur - 1); }
+    else if (e.key === 'ArrowLeft' || e.key === 'PageUp') { e.preventDefault(); if (cur === 0) playTyping(slides[0]); else show(cur - 1); }
     else if (e.key === 'Home') show(0);
     else if (e.key === 'End') show(n - 1);
     else if (e.key === 'f' || e.key === 'F') {
@@ -794,10 +950,20 @@ html,body { width:100%; height:100%; background:#171B21; overflow:hidden;
       else document.documentElement.requestFullscreen();
     }
   });
-  document.getElementById('prev').onclick = function () { show(cur - 1); };
+  document.getElementById('prev').onclick = function () { if (cur === 0) playTyping(slides[0]); else show(cur - 1); };
   document.getElementById('next').onclick = function () { show(cur + 1); };
   window.addEventListener('resize', fit);
-  fit(); show(0); startTitleTyping();
+  // QC 대시보드(iframe)가 데이터 로딩을 끝내면 보내는 신호 → 초록 상태로 전환
+  window.addEventListener('message', function (e) {
+    if (e.data && e.data.type === 'qc-availability-loaded') {
+      var els = document.querySelectorAll('.demo-url[data-url]');
+      for (var i = 0; i < els.length; i++) {
+        els[i].classList.remove('loading');
+        els[i].textContent = els[i].getAttribute('data-url');
+      }
+    }
+  });
+  fit(); show(0);
 })();
 </script>
 </body>
