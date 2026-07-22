@@ -42,8 +42,11 @@ import {
 // 드로어·카드에서 유지하고, 데이터 표면만 밝게 뒤집는다. 시리즈색은 흰 배경 대비를 위해 한 단 진하게 재보정.
 const ACCENT_HEX = '#2E7DB4'    // 관측 — 마린 블루 실선(흰 플롯 대비 위해 --accent #4E9AC9 보다 한 단 진하게)
 const FORECAST_HEX = '#C98A1E'  // 예측(점선) — 앰버, 관측(블루)·상태색과 구분되는 난색(흰 배경 대비 진하게)
-const QC_INST_HEX = '#8E44AD'   // 관측기관 QC(AQC/MQC) — 퍼플. AI QC(레드)와 색상각 명확히 분리, 흰 플롯 위 대비 확보
-const QC_AI_HEX = '#E5372C'     // AI QC(robust z-score 이상치) — 선명한 레드. 관측기관 QC(퍼플)와 확실히 구분
+// 관측기관 QC(AQC/MQC) 표출 제거(2026-07-22) — 실데이터 전수분석 결과 AQC/MQC 의 비-0 코드는 "값이
+// 이상하다"가 아니라 기관 내부 QC 상태코드(정상 데이터에 붙음, 0=통과·9=결측·자리→변수 매핑 비공개)라
+// 이를 이상치로 찍으면 정상 관측을 오류처럼 오도한다. 진짜 이상탐지는 AI QC(robust z-score)가 담당.
+// (근거: memory kma-institution-qc)
+const QC_AI_HEX = '#E5372C'     // AI QC(robust z-score 이상치) — 선명한 레드
 const GRID_HEX = '#E6EBF0'      // 그리드라인 — 흰 플롯면 위 옅은 회색 수평/수직 격자
 const LINE_HEX = '#D4DBE3'      // 축선 — 흰 배경 위 옅은 회색
 const TLO_HEX = '#8794A2'       // X축 2단 눈금 아랫줄(날짜) — 중간 회색
@@ -157,10 +160,10 @@ function fmtVal(v: number | null | undefined, decimals: number): string {
 }
 
 function exportCsv(buoy: MergedBuoy, range: TimeseriesRange, points: TimeseriesPoint[]) {
-  const header = ['시각(KST)', '파고_m', '파주기_s', '풍속_ms', '풍향_deg', '수온_C', '기온_C', '기압_hPa', '관측기관QC', 'AI_QC']
+  const header = ['시각(KST)', '파고_m', '파주기_s', '풍속_ms', '풍향_deg', '수온_C', '기온_C', '기압_hPa', 'AI_QC']
   const rows = points.map(p => [
     p.t, p.wave, p.wave_period, p.wind_speed, p.wind_dir, p.water_temp, p.air_temp, p.pressure,
-    p.qc?.flagged ? '1' : '0', p.ai_qc?.spike ? '1' : '0',
+    p.ai_qc?.spike ? '1' : '0',
   ].map(v => v == null ? '' : String(v)).join(','))
   const csv = [header.join(','), ...rows].join('\n')
   const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' })
@@ -495,7 +498,7 @@ function CurrentReadout({ buoy, recentTs }: { buoy: MergedBuoy; recentTs: Timese
 type ChartRow = {
   t: string; obs?: number | null; fc?: number | null
   fcLower?: number | null; fcWidth?: number | null
-  qcFlag?: boolean; aiSpike?: boolean
+  aiSpike?: boolean
 }
 
 function TimeseriesSection({ buoy, range, setRange, metric, setMetric, ts, loading, error, forecast }: {
@@ -520,7 +523,7 @@ function TimeseriesSection({ buoy, range, setRange, metric, setMetric, ts, loadi
   const chartData = useMemo<ChartRow[]>(() => {
     const rows = new Map<string, ChartRow>()
     for (const p of displayPoints) {
-      rows.set(p.t, { t: p.t, obs: p[metric] ?? null, qcFlag: !!p.qc?.flagged, aiSpike: !!p.ai_qc?.spike })
+      rows.set(p.t, { t: p.t, obs: p[metric] ?? null, aiSpike: !!p.ai_qc?.spike })
     }
     // TASK 1(2026-07) — 다운샘플 stride 가 건너뛴 QC/AI 플래그 시각도 행으로 강제 포함시킨다. X축은
     // 카테고리 축(dataKey="t")이라 그 시각이 chartData 의 t 값 집합에 아예 없으면 ReferenceDot 의
@@ -528,15 +531,14 @@ function TimeseriesSection({ buoy, range, setRange, metric, setMetric, ts, loadi
     // 반환 → NaN 좌표) 점이 그려지지 않는다. 현재 선택된 metric 에 유효값이 있는 플래그만 포함해
     // (다른 지표의 플래그 때문에 이 지표 관측선에 없는 지점이 끼어들어 단절되는 것을 방지) 행을 늘린다.
     for (const p of points) {
-      if (!(p.qc?.flagged || p.ai_qc?.spike)) continue
+      if (!p.ai_qc?.spike) continue
       const val = p[metric]
       if (val == null) continue
       const existing = rows.get(p.t)
       if (existing) {
-        existing.qcFlag = existing.qcFlag || !!p.qc?.flagged
-        existing.aiSpike = existing.aiSpike || !!p.ai_qc?.spike
+        existing.aiSpike = true
       } else {
-        rows.set(p.t, { t: p.t, obs: val, qcFlag: !!p.qc?.flagged, aiSpike: !!p.ai_qc?.spike })
+        rows.set(p.t, { t: p.t, obs: val, aiSpike: true })
       }
     }
     if (forecastActive && points.length) {
@@ -670,19 +672,6 @@ function TimeseriesSection({ buoy, range, setRange, metric, setMetric, ts, loadi
   // 가 건너뛴 인덱스의 플래그가 통째로 사라진다(실측: 1년 뷰에서 12건 중 0건 생존). 위 chartData
   // useMemo 에서 이미 이 시각들을 강제로 행에 포함시켜 두었으므로(카테고리 X축 domain 확보),
   // 여기서는 그 값만 그대로 뽑아 좌표(x=시각, y=값)로 쓰면 다운샘플과 무관하게 항상 표시된다.
-  const qcDots = useMemo(() => {
-    const all = points.filter(p => p.qc?.flagged && p[metric] != null).map(p => ({ t: p.t, v: p[metric] as number }))
-    // 장기 구간(1년 등)은 관측기관 QC 레코드가 수백~수천 건이라(AQC/MQC 자리→변수 매핑 비공개로
-    // "0 아닌 자리 있으면 레코드 단위 flagged" 보수적 표기) 전부 찍으면 차트가 로즈 점으로 뒤덮인다.
-    // 24h/7d/30d 는 상한(CAP) 이하라 전부 유지 → 구간 간 위치 일관성 보존, 그 이상만 균등 솎음으로
-    // 과밀을 해소한다(총건수는 아래 QC 범례가 그대로 표기). AI 이상감지(aiDots)는 항상 소수라 미적용.
-    const CAP = 30
-    if (all.length <= CAP) return all
-    const step = all.length / CAP
-    const out: { t: string; v: number }[] = []
-    for (let i = 0; i < CAP; i++) out.push(all[Math.floor(i * step)])
-    return out
-  }, [points, metric])
   const aiDots = useMemo(
     () => points.filter(p => p.ai_qc?.spike && p[metric] != null).map(p => ({ t: p.t, v: p[metric] as number })),
     [points, metric]
@@ -866,10 +855,6 @@ function TimeseriesSection({ buoy, range, setRange, metric, setMetric, ts, loadi
                     isAnimationActive={false} connectNulls />
                 )}
 
-                {qcDots.map(r => (
-                  <ReferenceDot key={`qc-${r.t}`} x={r.t} y={r.v}
-                    r={4} fill={QC_INST_HEX} stroke={PLOT_BG_HEX} strokeWidth={1.5} ifOverflow="extendDomain" />
-                ))}
                 {aiDots.map(r => (
                   <ReferenceDot key={`ai-${r.t}`} x={r.t} y={r.v}
                     r={5} fill={QC_AI_HEX} stroke={PLOT_BG_HEX} strokeWidth={1.5} ifOverflow="extendDomain" />
@@ -892,13 +877,10 @@ function TimeseriesSection({ buoy, range, setRange, metric, setMetric, ts, loadi
         </div>
       )}
 
-      {/* QC 범례 — 관측기관 + AI, 한 줄로 압축 표기(색 분리 유지 — 신뢰 표기) */}
+      {/* QC 범례 — AI QC(robust z-score 이상탐지)만. 관측기관 QC(AQC/MQC)는 "값 이상"이 아니라 기관
+          내부 상태코드라 표출 제외(상단 상수 주석·memory kma-institution-qc 참고). */}
       {!loading && !error && points.length > 0 && (
         <div style={{ marginTop: 9, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 12, fontSize: 13, color: 'var(--t-lo)' }}>
-          <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-            <span style={{ width: 8, height: 8, borderRadius: '50%', background: QC_INST_HEX, flexShrink: 0 }} />
-            관측기관 QC{ts?.qc_summary.checked ? ` · ${ts.qc_summary.flagged_count}건` : ''}
-          </span>
           <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
             <span style={{ width: 8, height: 8, borderRadius: '50%', background: QC_AI_HEX, flexShrink: 0 }} />
             AI QC{ts?.qc_summary.ai_spike_count != null ? ` · ${ts.qc_summary.ai_spike_count}건` : ''}
@@ -906,12 +888,10 @@ function TimeseriesSection({ buoy, range, setRange, metric, setMetric, ts, loadi
         </div>
       )}
 
-      {/* 데이터 성격 caveat — 신뢰 표기라 의미는 유지하되(§12) 내부 API명·경로 잔여어를 없애고
-          짧게, 별도 줄·저채도로 분리한다. */}
-      {!loading && !error && points.length > 0 && (isDaily || (ts && !ts.qc_summary.checked)) && (
-        <div style={{ marginTop: 4, display: 'flex', flexDirection: 'column', gap: 2 }}>
-          {isDaily && <div style={{ fontSize: 13, color: 'var(--t-lo)' }}>· 일 단위 관측(파고부이)</div>}
-          {ts && !ts.qc_summary.checked && <div style={{ fontSize: 13, color: 'var(--t-lo)' }}>· 기관 QC 미제공 구간</div>}
+      {/* 데이터 성격 caveat — 일 단위 관측(파고부이)만 표기(기관 QC 관련 문구는 표출 제외에 맞춰 삭제). */}
+      {!loading && !error && points.length > 0 && isDaily && (
+        <div style={{ marginTop: 4 }}>
+          <div style={{ fontSize: 13, color: 'var(--t-lo)' }}>· 일 단위 관측(파고부이)</div>
         </div>
       )}
     </Section>
@@ -958,8 +938,7 @@ function ChartTooltip({ active, payload, label, unit, metricLabel, decimals }: {
           불확실성 밴드 {row.fcLower.toFixed(decimals)}–{(row.fcLower + row.fcWidth).toFixed(decimals)}{unit}
         </div>
       )}
-      {row.qcFlag && <div style={{ fontSize: 13, color: QC_INST_HEX, marginTop: 4, fontWeight: 600 }}>● 관측기관 QC 플래그</div>}
-      {row.aiSpike && <div style={{ fontSize: 13, color: QC_AI_HEX, marginTop: 2, fontWeight: 600 }}>◆ AI QC(스파이크)</div>}
+      {row.aiSpike && <div style={{ fontSize: 13, color: QC_AI_HEX, marginTop: 4, fontWeight: 600 }}>◆ AI QC(스파이크)</div>}
     </div>
   )
 }
