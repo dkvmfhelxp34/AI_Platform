@@ -28,6 +28,10 @@ export interface StationMeta {
   obs_code?: string
   /** 관측개시일(KHOA oceangrid pointDetail.do 실측, KMA 는 미보유 → undefined). 지어내지 말 것. */
   obs_start_date?: string | null
+  /** 관측소 주소(KHOA 비공식 경로 실측, KMA 는 미보유 → undefined). 지어내지 말 것. */
+  address?: string
+  /** 관측유형(KHOA 비공식 경로 실측, KMA 는 미보유 → undefined). 지어내지 말 것. */
+  obs_type?: string
 }
 
 /** 기관명 표기(Wave 3b, ui_revision_notes §8) — 부이가 식별되는 모든 곳에서 종류(B/C/TW..)뿐

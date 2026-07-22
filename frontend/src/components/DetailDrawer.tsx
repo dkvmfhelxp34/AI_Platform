@@ -522,6 +522,23 @@ function TimeseriesSection({ buoy, range, setRange, metric, setMetric, ts, loadi
     for (const p of displayPoints) {
       rows.set(p.t, { t: p.t, obs: p[metric] ?? null, qcFlag: !!p.qc?.flagged, aiSpike: !!p.ai_qc?.spike })
     }
+    // TASK 1(2026-07) — 다운샘플 stride 가 건너뛴 QC/AI 플래그 시각도 행으로 강제 포함시킨다. X축은
+    // 카테고리 축(dataKey="t")이라 그 시각이 chartData 의 t 값 집합에 아예 없으면 ReferenceDot 의
+    // 좌표를 계산할 스케일 도메인 자체가 없어(Recharts scalePoint 는 domain 밖 값에 undefined 를
+    // 반환 → NaN 좌표) 점이 그려지지 않는다. 현재 선택된 metric 에 유효값이 있는 플래그만 포함해
+    // (다른 지표의 플래그 때문에 이 지표 관측선에 없는 지점이 끼어들어 단절되는 것을 방지) 행을 늘린다.
+    for (const p of points) {
+      if (!(p.qc?.flagged || p.ai_qc?.spike)) continue
+      const val = p[metric]
+      if (val == null) continue
+      const existing = rows.get(p.t)
+      if (existing) {
+        existing.qcFlag = existing.qcFlag || !!p.qc?.flagged
+        existing.aiSpike = existing.aiSpike || !!p.ai_qc?.spike
+      } else {
+        rows.set(p.t, { t: p.t, obs: val, qcFlag: !!p.qc?.flagged, aiSpike: !!p.ai_qc?.spike })
+      }
+    }
     if (forecastActive && points.length) {
       const lastObs = points[points.length - 1]
       const lastVal = lastObs[metric]
@@ -648,8 +665,28 @@ function TimeseriesSection({ buoy, range, setRange, metric, setMetric, ts, loadi
     return Math.ceil(maxLen * CHAR_WIDTH) + AXIS_MARGIN
   }, [ticks, tickStep, metric])
 
-  const qcDots = useMemo(() => chartData.filter(r => r.qcFlag && r.obs != null), [chartData])
-  const aiDots = useMemo(() => chartData.filter(r => r.aiSpike && r.obs != null), [chartData])
+  // TASK 1(2026-07) — 반드시 FULL-해상도 `points`(exportCsv 와 동일 소스)에서 뽑는다. chartData/
+  // displayPoints 는 장기 구간(30d/1y)에서 다운샘플된 표시용 부분집합이라, 여기서 뽑으면 stride
+  // 가 건너뛴 인덱스의 플래그가 통째로 사라진다(실측: 1년 뷰에서 12건 중 0건 생존). 위 chartData
+  // useMemo 에서 이미 이 시각들을 강제로 행에 포함시켜 두었으므로(카테고리 X축 domain 확보),
+  // 여기서는 그 값만 그대로 뽑아 좌표(x=시각, y=값)로 쓰면 다운샘플과 무관하게 항상 표시된다.
+  const qcDots = useMemo(() => {
+    const all = points.filter(p => p.qc?.flagged && p[metric] != null).map(p => ({ t: p.t, v: p[metric] as number }))
+    // 장기 구간(1년 등)은 관측기관 QC 레코드가 수백~수천 건이라(AQC/MQC 자리→변수 매핑 비공개로
+    // "0 아닌 자리 있으면 레코드 단위 flagged" 보수적 표기) 전부 찍으면 차트가 로즈 점으로 뒤덮인다.
+    // 24h/7d/30d 는 상한(CAP) 이하라 전부 유지 → 구간 간 위치 일관성 보존, 그 이상만 균등 솎음으로
+    // 과밀을 해소한다(총건수는 아래 QC 범례가 그대로 표기). AI 이상감지(aiDots)는 항상 소수라 미적용.
+    const CAP = 30
+    if (all.length <= CAP) return all
+    const step = all.length / CAP
+    const out: { t: string; v: number }[] = []
+    for (let i = 0; i < CAP; i++) out.push(all[Math.floor(i * step)])
+    return out
+  }, [points, metric])
+  const aiDots = useMemo(
+    () => points.filter(p => p.ai_qc?.spike && p[metric] != null).map(p => ({ t: p.t, v: p[metric] as number })),
+    [points, metric]
+  )
   const gradId = `obs-grad-${metric}`
 
   const currentVal = points.length ? points[points.length - 1][metric] : null
@@ -834,11 +871,11 @@ function TimeseriesSection({ buoy, range, setRange, metric, setMetric, ts, loadi
                 )}
 
                 {qcDots.map(r => (
-                  <ReferenceDot key={`qc-${r.t}`} x={r.t} y={r.obs as number}
+                  <ReferenceDot key={`qc-${r.t}`} x={r.t} y={r.v}
                     r={4} fill={QC_INST_HEX} stroke={PLOT_BG_HEX} strokeWidth={1.5} ifOverflow="extendDomain" />
                 ))}
                 {aiDots.map(r => (
-                  <ReferenceDot key={`ai-${r.t}`} x={r.t} y={r.obs as number}
+                  <ReferenceDot key={`ai-${r.t}`} x={r.t} y={r.v}
                     r={5} fill={QC_AI_HEX} stroke={PLOT_BG_HEX} strokeWidth={1.5} ifOverflow="extendDomain" />
                 ))}
               </ComposedChart>
@@ -973,15 +1010,22 @@ function SpecsBlock({ station, buoy }: { station: StationMeta | null; buoy: Merg
     return `${f.value_m}${secondary} m${depth}`
   }
 
-  const rows: { label: string; value?: string | null }[] = [
-    { label: '부이형식', value: station?.form },
-    { label: '지점코드', value: station?.stn_id ?? buoy.id },
-    { label: '관측개시일', value: station?.obs_start_date },
-    ...(specs
-      ? SPEC_ORDER.filter(k => specs[k]).map(k => ({ label: SPEC_SHORT_LABEL[k], value: specValue(k) }))
-      : [{ label: '센서 제원', value: undefined }]),
-    { label: '정밀 좌표', value: `${buoy.lat.toFixed(4)}°N, ${buoy.lon.toFixed(4)}°E` },
-  ]
+  // TASK 2(2026-07) — 값이 있는 항목만 행으로 넣는다("—" 자리채움 행을 아예 만들지 않는다). 관측개시일
+  // (KMA 전 지점 미보유)·센서 설치고(파고부이는 value_m=null)처럼 부이 종류에 따라 구조적으로 비는
+  // 항목이 많고, KHOA(specs=null)는 센서 제원 자체가 없으므로 그 자리에 죽은 "센서 제원" 행을 넣지
+  // 않는다. 대신 KHOA 가 제공하는 관측소 주소/관측유형을 지점코드 다음에 추가한다.
+  const rows: { label: string; value: string }[] = []
+  if (station?.form) rows.push({ label: '부이형식', value: station.form })
+  rows.push({ label: '지점코드', value: station?.stn_id ?? buoy.id })
+  if (station?.address) rows.push({ label: '관측소 주소', value: station.address })
+  if (station?.obs_type) rows.push({ label: '관측유형', value: station.obs_type })
+  if (station?.obs_start_date) rows.push({ label: '관측개시일', value: station.obs_start_date })
+  if (specs) {
+    for (const k of SPEC_ORDER) {
+      if (specs[k]?.value_m != null) rows.push({ label: SPEC_SHORT_LABEL[k], value: specValue(k)! })
+    }
+  }
+  rows.push({ label: '정밀 좌표', value: `${buoy.lat.toFixed(4)}°N, ${buoy.lon.toFixed(4)}°E` })
 
   return (
     <Section title="지점 제원">
