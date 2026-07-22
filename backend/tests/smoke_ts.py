@@ -28,10 +28,10 @@ def _summary(j: dict):
     if pts:
         print(f"  first point: {json.dumps(pts[0], ensure_ascii=False)}")
         print(f"  last  point: {json.dumps(pts[-1], ensure_ascii=False)}")
-        flagged = [p for p in pts if p.get("qc", {}).get("flagged")]
-        print(f"  flagged points in payload: {len(flagged)}")
-        if flagged:
-            print(f"    sample flagged point: {json.dumps(flagged[0], ensure_ascii=False)}")
+        spikes = [p for p in pts if p.get("ai_qc", {}).get("spike")]
+        print(f"  AI-QC spike points in payload: {len(spikes)}")
+        if spikes:
+            print(f"    sample spike point: {json.dumps(spikes[0], ensure_ascii=False)}")
     print(f"  qc_summary: {j.get('qc_summary')}")
 
 
@@ -48,7 +48,7 @@ def test_kma_timeseries():
 
 
 def test_kma_timeseries_flagged_station():
-    _hr("1b) GET /api/timeseries?source=KMA&id=KMA_22188&hours=48 (통영 — 실측상 AQC 플래그 존재 지점)")
+    _hr("1b) GET /api/timeseries?source=KMA&id=KMA_22188&hours=48 (통영)")
     import main
     client = TestClient(main.app)
     r = client.get("/api/timeseries", params={"source": "KMA", "id": "KMA_22188", "hours": 48})
@@ -68,7 +68,6 @@ def test_khoa_timeseries():
     _summary(j)
     assert r.status_code == 200 and "error" not in j
     assert len(j.get("points", [])) > 0, "no KHOA points"
-    assert j.get("qc_summary", {}).get("checked") is False, "KHOA qc_summary.checked should be False (no institutional QC)"
 
 
 def test_khoa_timeseries_deep_buoy():

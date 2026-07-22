@@ -184,13 +184,9 @@ export interface ChatMessage {
 }
 
 // ── GET /api/timeseries (Wave 3b: range/stats/ai_qc 확장, backend timeseries.py 참고) ────────
-export interface TimeseriesPointQC {
-  flagged: boolean
-  checked?: boolean
-  note?: string
-}
-
-/** 알고리즘(통계) 기반 QC(Phase 4 qc.py) — 관측기관 QC(위 `qc`)와 근거가 달라 별도 필드로 병합한다. */
+// 관측기관 QC(AQC/MQC) 표시는 제거됨(2026-07-22) — 실측상 이상치 플래그가 아니라 기관 내부 상태
+// 코드로 밝혀져(정상 데이터에도 붙음) 백엔드도 더 이상 파싱/응답에 포함하지 않는다. 이상 판정의
+// 유일한 근거는 아래 AI QC(robust z-score 스파이크/결측, backend/qc.py)다.
 export interface TimeseriesPointAiQC {
   spike: boolean
   missing: boolean
@@ -205,7 +201,6 @@ export interface TimeseriesPoint {
   water_temp?: number | null
   air_temp?: number | null
   pressure?: number | null
-  qc: TimeseriesPointQC
   ai_qc?: TimeseriesPointAiQC
 }
 
@@ -225,7 +220,7 @@ export interface TimeseriesResponse {
   resolution?: string
   unit_notes: string
   points: TimeseriesPoint[]
-  qc_summary: { flagged_count: number; checked: boolean; ai_spike_count?: number; ai_gap_count?: number }
+  qc_summary: { ai_spike_count?: number; ai_gap_count?: number }
   stats?: Partial<Record<TimeseriesMetric | 'wave_period' | 'wind_dir' | 'air_temp', TimeseriesStat>>
   cadence_min?: number | null
   error?: string

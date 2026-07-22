@@ -749,19 +749,18 @@ def tool_get_qc_summary(args: dict) -> dict:
     if ts is None:
         return {"error": f"'{station['name']}'의 QC 자료가 없습니다.", "name": station["name"]}
 
+    # 이상 판정은 AI QC(robust z-score 스파이크/결측, backend/qc.py) 만을 근거로 한다.
+    # 관측기관 QC(AQC/MQC)는 실측상 "이상치 플래그"가 아니라 기관 내부 검사 상태코드(0=정상,
+    # 9=결측 등, 자리→변수 매핑 비공개)로 밝혀져 정상 데이터에도 붙는다 — 이상 신호로 노출하지 않는다.
     pts = ts["points"]
     recent = pts[-20:]
-    flagged_recent = [p["t"] for p in recent if p.get("qc", {}).get("flagged")]
     spike_recent = [p["t"] for p in recent if p.get("ai_qc", {}).get("spike")]
     qc_summary = ts.get("qc_summary", {})
 
     return {
         "name": station["name"],
-        "관측기관_QC_이상_건수": qc_summary.get("flagged_count", 0),
-        "관측기관_QC_검사여부": qc_summary.get("checked", False),
         "AI_이상감지_스파이크_건수": qc_summary.get("ai_spike_count", 0),
         "AI_결측_건수": qc_summary.get("ai_gap_count", 0),
-        "최근20건_기관QC_이상_시각": flagged_recent,
         "최근20건_AI스파이크_시각": spike_recent,
     }
 
@@ -1210,7 +1209,7 @@ SYSTEM_PROMPT = """당신은 국내 해양 부이 통합 모니터링 플랫폼(
 - **query_buoys**: {"기관": "KMA|KHOA", "종류": "...", "상태": "정상|지연|미수신", "해역": "동해|서해|남해|제주"} (전부 선택사항, 조합 가능) → 조건에 맞는 부이 목록(이름·기관·상태·좌표). 해역은 이 4개 대분류만 지원하는 좌표 기반 근사치입니다 — "대한해협"·"제주해협"·"동해남부" 같은 세부 해역명은 이 필터가 아니라 아래 get_area_conditions 의 area 인자를 쓰세요.
 - **get_buoy_now**: {"name_or_id": "덕적도"} → 그 부이의 현재 파고·풍속·수온·기압·상태·관측시각.
 - **get_timeseries_summary**: {"name_or_id": "...", "metric": "wave|water_temp|wind_speed|pressure", "range": "24h|7d|30d|1y"} → 그 기간 현재/평균/최대/최소 + 구간내 변화(추세).
-- **get_qc_summary**: {"name_or_id": "..."} → 관측기관 QC(AQC/MQC) + AI 이상감지(스파이크/결측) 최근 플래그 요약.
+- **get_qc_summary**: {"name_or_id": "..."} → AI 이상감지(robust z-score 스파이크/결측, backend/qc.py) 최근 플래그 요약. 이상 여부의 유일한 판정 근거이며, 관측기관 QC(AQC/MQC)는 정상 데이터에도 붙는 내부 상태코드일 뿐이라 이상 신호로 다루지 않습니다(질문에 답할 때도 "이상"은 이 AI 결과만 근거로 삼으세요).
 - **get_forecast**: {"name_or_id": "...", "metric": "wave|water_temp|wind_speed|pressure"} → 24h 모의 예측 요약(반드시 "모의/시연"임을 답변에 명시).
 - **get_status_overview**: {} → 전국 전체 정상/지연/미수신 집계, 활성 경보 수, 최대 파고 지점.
 - **get_area_conditions**: {"area": "해역명"} 또는 {"bbox": {"lon_min":.., "lon_max":.., "lat_min":.., "lat_max":..}} 또는

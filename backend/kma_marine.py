@@ -5,7 +5,8 @@ Base: https://apihub.kma.go.kr/api/typ01/url (실시간) · .../api/typ02/openAp
 
 Endpoints used:
   - sea_obs.php   : 해양 종합 관측(위경도+실시간값, 지도 시딩/스냅샷). TP=B(해양기상부이)/C(파고부이)/기타.
-  - kma_buoy2.php : 부이 상세 + QC(AQC/MQC), 기간조회(tm1~tm2) → 시계열.
+  - kma_buoy2.php : 부이 상세, 기간조회(tm1~tm2) → 시계열(응답의 AQC/MQC 컬럼은 기관 내부 상태코드일
+    뿐 이상치 플래그가 아니라 파싱하지 않음 — timeseries.py 모듈독스트링 참고).
   - typ02 openApi SeaMtlyInfoService/{getBuoyLstTbl,getWaveBuoyLstTbl,getLhawsLstTbl} : 지점 제원(형식·센서고·영문명).
 """
 from __future__ import annotations
@@ -222,8 +223,9 @@ def fetch_sea_obs(tm: Optional[str] = None) -> list[dict]:
     return []
 
 
-# ── kma_buoy2.php (QC/기간조회 → 시계열) ─────────────────────────────────────
+# ── kma_buoy2.php (기간조회 → 시계열) ─────────────────────────────────────────
 # 컬럼(19): TM,STN,WD1,WS1,WS1_GST,WD2,WS2,WS2_GST,PA,HM,TA,TW,WH_MAX,WH_SIG,WH_AVE,WP,WO,AQC,MQC
+# (AQC/MQC 는 파싱하지 않음 — 위 _parse_buoy2 주석 참고)
 
 _BUOY2_FIELDS = [
     "tm", "stn", "wd1", "ws1", "ws1_gst", "wd2", "ws2", "ws2_gst",
@@ -252,16 +254,14 @@ def _parse_buoy2(raw: str) -> list[dict]:
                 rec[field] = _num_int(val)
             else:
                 rec[field] = _num(val)
-        # AQC/MQC(있으면) — 플래그 문자열, 결측 아님, 숫자 변환 안 함
-        idx = len(_BUOY2_FIELDS)
-        rec["aqc"] = parts[idx] if len(parts) > idx else None
-        rec["mqc"] = parts[idx + 1] if len(parts) > idx + 1 else None
+        # AQC/MQC(있으면, 컬럼 19 이후) — 기관 내부 검사 상태코드일 뿐 이상치 플래그가 아님이
+        # 실측 확인되어(자리→변수 매핑도 비공개) 더 이상 파싱하지 않는다(2026-07-22 제거).
         out.append(rec)
     return out
 
 
 def fetch_buoy_series(stn: str, tm1: str, tm2: str) -> list[dict]:
-    """부이 상세 기간조회(QC 포함) → 시간순 레코드 리스트."""
+    """부이 상세 기간조회 → 시간순 레코드 리스트."""
     raw = _get_raw_cp949(
         "kma_buoy2.php", {"tm1": tm1, "tm2": tm2, "stn": stn}, _TTL_BUOY_SERIES
     )

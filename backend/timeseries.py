@@ -1,7 +1,7 @@
 """통합 시계열 API 로직 — `GET /api/timeseries` (Phase 3 → Wave 3a Fix 2: 연구용 과거 이력 확장).
 
-- KMA B(해양기상부이): `kma_marine.fetch_buoy_series(stn, tm1, tm2)`(kma_buoy2.php 기간조회, 30분 해상도)
-  → AQC/MQC 관측기관 QC 병합. 354일 초과 구간은 자동으로 ≤354일 단위 분할호출 후 병합
+- KMA B(해양기상부이): `kma_marine.fetch_buoy_series(stn, tm1, tm2)`(kma_buoy2.php 기간조회, 30분 해상도).
+  354일 초과 구간은 자동으로 ≤354일 단위 분할호출 후 병합
   (`kma_buoy2.php` 단일요청 상한 실측, docs/historical_data_probe.md §1-2).
 - KMA C(파고부이): `kma_buoy2.php` 가 C타입을 지원하지 않는다(실측 0건) → 그 경우
   `kma_marine.fetch_daily_wave_buoy(station, year, month)`(getDailyWaveBuoy, 일별 유의파고/최대파고/
@@ -16,10 +16,15 @@
 정규화 스키마:
   { id, source, name, range, resolution, unit_notes,
     points: [{t, wave, wave_period, wind_speed, wind_dir, water_temp, air_temp, pressure,
-              qc: {flagged, checked, note?}, ai_qc: {spike, missing}}],
-    qc_summary: {flagged_count, checked, ai_spike_count, ai_gap_count},
+              ai_qc: {spike, missing}}],
+    qc_summary: {ai_spike_count, ai_gap_count},
     stats: {<metric>: {min, max, mean, count, unit}, ...},
     cadence_min: float|None }
+
+이상 판정은 AI QC(`qc.py`, robust z-score 스파이크/결측)만을 근거로 한다. KMA `kma_buoy2.php` 는
+AQC/MQC 관측기관 QC 원시값도 응답에 포함하지만, 실측상 이는 "이상치 플래그"가 아니라 기관 내부
+검사 상태코드(0=정상, 9=결측 등, 자리→변수 매핑 비공개)로 정상 데이터에도 붙는다 — 사용자에게
+오인시킬 수 있어 파싱/표출하지 않는다(2026-07-22 제거, 상세 근거는 git 이력 참고).
 """
 from __future__ import annotations
 
@@ -155,31 +160,6 @@ def _resolve_window(hours: int, range_: Optional[str], days: Optional[int]) -> t
     return h / 24.0, f"{h}h"
 
 
-def _parse_kma_qc(aqc: Optional[str], mqc: Optional[str]) -> dict:
-    """KMA AQC(자동)/MQC(수동) 자리별 플래그 문자열 파싱.
-
-    실측 확인(2026-07-15): `/`(미검사) 뿐 아니라 `-`(미검사/해당없음)도 쓰이며, 자리 수·의미는 지점마다
-    다르게 관측됨(예: MQC 가 전부 '1'인 지점도 존재) — 자리→관측변수 매핑은 비공개(undocumented).
-    따라서 "숫자이면서 0이 아닌 문자가 하나라도 있으면 그 관측 레코드(포인트) 전체를 flagged" 로
-    보수적으로 처리한다(포인트 단위 플래그, 변수별 세분화는 하지 않음).
-    """
-    flagged = False
-    checked = False
-    for s in (aqc, mqc):
-        if not s:
-            continue
-        for ch in s:
-            if not ch.isdigit():
-                continue  # '/', '-' 등은 미검사/해당없음 — 검사여부 판단에서 제외
-            checked = True
-            if ch != "0":
-                flagged = True
-    out = {"flagged": flagged, "checked": checked}
-    if flagged:
-        out["note"] = "관측기관 QC 이상치 플래그(AQC/MQC) — 자리별→변수 매핑 비공개, 레코드 단위 표시"
-    return out
-
-
 # ── stats / cadence(관측주기 실측) ────────────────────────────────────────────
 
 def _compute_stats(points: list[dict]) -> dict:
@@ -256,7 +236,6 @@ def _daily_wave_buoy_span_points(stn_id: str, start_date, end_date) -> list[dict
                 "water_temp": _daily_num(r.get("tw")),
                 "air_temp": None,
                 "pressure": None,
-                "qc": {"flagged": False, "checked": False},
             })
         y, m = (y, m + 1) if m < 12 else (y + 1, 1)
     points.sort(key=lambda p: p["t"])
@@ -338,7 +317,6 @@ def _merge_latest_kma_point(points: list[dict], stn_id: str) -> None:
         "water_temp": match.get("tw"),
         "air_temp": match.get("ta"),
         "pressure": match.get("pa"),
-        "qc": {"flagged": False, "checked": False},
     })
 
 
@@ -355,18 +333,11 @@ def _kma_timeseries(stn_id: str, days_float: float, label: str) -> dict:
 
     resolution = "30min"
     points: list[dict] = []
-    flagged_count = 0
-    any_checked = False
     if records:
         for r in records:
             wave = r.get("wh_sig")
             if wave is None:
                 wave = r.get("wh_ave")
-            qc = _parse_kma_qc(r.get("aqc"), r.get("mqc"))
-            if qc["checked"]:
-                any_checked = True
-            if qc["flagged"]:
-                flagged_count += 1
             points.append({
                 "t": _fmt_kma_tm(r.get("tm")),
                 "wave": wave,
@@ -376,7 +347,6 @@ def _kma_timeseries(stn_id: str, days_float: float, label: str) -> dict:
                 "water_temp": r.get("tw"),
                 "air_temp": r.get("ta"),
                 "pressure": r.get("pa"),
-                "qc": qc,
             })
     else:
         # kma_buoy2.php 는 파고부이(C타입) 미지원(0건 응답) → getDailyWaveBuoy 일별 이력으로 대체.
@@ -391,7 +361,7 @@ def _kma_timeseries(stn_id: str, days_float: float, label: str) -> dict:
 
     unit_notes = (
         "파고 m(WH_SIG, 미관측시 WH_AVE) · 파주기 s · 풍속 m/s · 풍향 deg · 수온/기온 ℃ · 기압 hPa"
-        " — KMA kma_buoy2.php 기간조회(tm1~tm2, 30분), AQC/MQC 관측기관 QC 포함"
+        " — KMA kma_buoy2.php 기간조회(tm1~tm2, 30분)"
         + ("" if days_float <= _KMA_BUOY2_MAX_DAYS else f" (단일요청 상한 {_KMA_BUOY2_MAX_DAYS:.0f}일 → 자동 분할호출 병합)")
     ) if resolution == "30min" else (
         "파고 m(유의파고 일평균) · 파주기 s(일평균) · 수온 ℃(일평균) — KMA getDailyWaveBuoy 일별 통계"
@@ -407,7 +377,7 @@ def _kma_timeseries(stn_id: str, days_float: float, label: str) -> dict:
         "resolution": resolution,
         "unit_notes": unit_notes,
         "points": points,
-        "qc_summary": {"flagged_count": flagged_count, "checked": any_checked},
+        "qc_summary": {},
         "_view_start": view_start,  # §AIQC-RANGE — 내부 전용, get_timeseries 에서 소비 후 응답에서 제거됨
     }
 
@@ -444,7 +414,6 @@ def _khoa_point_from_tw_recent(r: dict) -> dict:
         "water_temp": _num(r.get("wtem")),
         "air_temp": _num(r.get("artmp")),
         "pressure": _num(r.get("atmpr")),
-        "qc": {"flagged": False, "checked": False},
     }
 
 
@@ -505,7 +474,6 @@ def _khoa_timeseries(obs_code: str, days_float: float, label: str) -> dict:
                     "water_temp": r.get("water_temp"),
                     "air_temp": r.get("air_temp"),
                     "pressure": r.get("pressure"),
-                    "qc": {"flagged": False, "checked": False},
                 })
             for r in today_raw:
                 points.append(_khoa_point_from_tw_recent(r))
@@ -543,7 +511,6 @@ def _khoa_timeseries(obs_code: str, days_float: float, label: str) -> dict:
                 "water_temp": r.get("water_temp"),
                 "air_temp": r.get("air_temp"),
                 "pressure": r.get("pressure"),
-                "qc": {"flagged": False, "checked": False},
             })
 
     # 24h 빠른 경로를 탔으면 이 tail-merge 는 순수 중복이다 — `today_raw` 가 이미 같은 twRecent
@@ -578,25 +545,29 @@ def _khoa_timeseries(obs_code: str, days_float: float, label: str) -> dict:
         "unit_notes": (
             "파고 m · 파주기 s · 풍속 m/s · 풍향 deg · 수온/기온 ℃ · 기압 hPa"
             " — KHOA oceangrid 비공식 일자별 이력(docs/oceangrid_probe.md) + twRecent 최근 롤링으로"
-            " 현재까지 보강, 기관 QC 미제공" + cap_note
+            " 현재까지 보강" + cap_note
         ),
         "points": points,
-        "qc_summary": {"flagged_count": 0, "checked": False},
+        "qc_summary": {},
         # §AIQC-RANGE — 내부 전용(get_timeseries 에서 소비 후 응답에서 제거됨). 위에서 oceangrid
         # fetch 시작을 앞당겨(패딩) window_start 이전 실제 표본도 `points` 에 남아있을 수 있으므로,
         # `qc.run_qc` 가 스파이크는 전체(패딩 포함) 배열로 계산하고 이 경계로 표시 구간만 트림한다.
-        "_view_start": window_start.strftime("%Y-%m-%d %H:%M"),
+        # 표시 경계는 `days_capped`(사용자 노출 상한, KHOA 최대 30일) 기준 — `window_start`(=now-
+        # days_float)를 쓰면 1y 요청 시 경계가 365일 전이 돼 QC 패딩분(now-31일)까지 트림 없이
+        # 새어 나온다(§2026-07-22 픽스). 24h/7d/30d 는 days_float≤cap 이라 window_start 와 동일.
+        "_view_start": (now - timedelta(days=days_capped)).strftime("%Y-%m-%d %H:%M"),
     }
 
 
 # ── 알고리즘 AI-QC 병합(Phase 4) ────────────────────────────────────────────
 
 def _apply_ai_qc(result: dict, metric: str = "wave", view_start: Optional[str] = None) -> None:
-    """`qc.py`(robust z-score 스파이크 + 결측/간격 탐지)를 points 에 병합한다.
+    """`qc.py`(robust z-score 스파이크 + 결측/간격 탐지)를 points 에 `ai_qc` 필드로 병합한다.
 
-    관측기관 QC(각 포인트의 `qc` 필드, AQC/MQC 기반)는 그대로 두고 `ai_qc` 필드를 추가한다 —
-    두 QC 는 서로 다른 근거(기관 검증 vs 통계적 이상치)이므로 프론트에서 구분 표시할 수 있게 병합하지
-    않는다. 헤드라인 변수인 파고(wave)를 기준으로 판정한다(KMA/KHOA 공통 필드).
+    이상 판정의 유일한 근거는 이 AI QC 다. KMA 관측기관 QC(AQC/MQC)는 실측상 "이상치 플래그"가
+    아니라 기관 내부 검사 상태코드로 밝혀져(2026-07-22, 정상 데이터에도 붙음) 더 이상 파싱/표출하지
+    않는다(제거 근거는 timeseries.py 모듈독스트링 참고). 헤드라인 변수인 파고(wave)를 기준으로
+    판정한다(KMA/KHOA 공통 필드).
 
     §AIQC-RANGE(2026-07-22): `result["points"]` 는 표시 구간(view window) 이전의 실제 과거 표본을
     패딩으로 포함하고 있을 수 있다(`_kma_timeseries`/`_khoa_timeseries` 참고). `view_start` 를
@@ -665,21 +636,9 @@ def get_timeseries(
     result["points"] = demo_scenario.apply_timeseries_override(result["points"], result["id"])
 
     # §AIQC-RANGE — 스파이크는 패딩 포함 전체 배열로 계산하고, 반환되는 points 는 view_start 로
-    # 트림된 표시 구간만 담는다(패딩은 API 응답에 노출되지 않음 — 아래 institution QC 카운트·
-    # stats·cadence 는 전부 이 트림된 최종 points 기준으로 계산해야 패딩 구간이 섞여 들어가지
-    # 않는다. 그래서 institution QC 재집계를 이 호출 "다음"으로 옮겼다 — 예전엔 반대 순서였다).
+    # 트림된 표시 구간만 담는다(패딩은 API 응답에 노출되지 않음 — 아래 stats·cadence 는 전부 이
+    # 트림된 최종 points 기준으로 계산해야 패딩 구간이 섞여 들어가지 않는다).
     _apply_ai_qc(result, metric=metric, view_start=view_start)
-
-    # 위 단계들(패딩 트림·스파이크 주입·시계열 절단)로 points 가 바뀌었으므로, 원본 records 기준으로
-    # 미리 집계돼 있던 관측기관 QC 카운트(qc_summary.flagged_count/checked)를 최종(표시 구간) points
-    # 기준으로 다시 세어 stale 값이 남지 않게 한다(요청사항: "잘려나간/패딩 포인트가 stats/qc_summary
-    # 에 남지 않게").
-    result["qc_summary"]["flagged_count"] = sum(
-        1 for p in result["points"] if p.get("qc", {}).get("flagged")
-    )
-    result["qc_summary"]["checked"] = any(
-        p.get("qc", {}).get("checked") for p in result["points"]
-    )
 
     result["stats"] = _compute_stats(result["points"])
     result["cadence_min"] = _median_cadence_minutes(result["points"])
