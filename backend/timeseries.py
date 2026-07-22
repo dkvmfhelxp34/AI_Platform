@@ -53,6 +53,19 @@ _KHOA_HIST_CAP_DAYS = 30.0    # oceangrid day-loop(1일당 1회 호출 다항목
 # sea_obs 값 1건만 남아 "7일/30일 조회인데 포인트 1개"가 된다.
 _KMA_DAILY_FALLBACK_LOOKBACK_DAYS = 365.0  # range=1y 프리셋과 동일 반경 재사용(이미 검증된 조회량)
 
+# ── §AIQC-RANGE 픽스(2026-07-22) — AI-QC range-독립성용 "패딩" 반경 ────────────────────────────────
+# `qc.detect_spikes` 는 각 점의 국지창(half=5, window=11)에 진짜 이웃이 있어야 range(24h/7d/30d/1y)
+# 에 무관하게 같은 판정을 낸다(qc.py 모듈독스트링 §AIQC-RANGE 참고). 그런데 `_kma_timeseries`/
+# `_khoa_timeseries` 는 range 별로 서로 다른 길이의 배열만 조회했으므로, 표시 구간(view window)
+# 시작(tm1) 근처 점은 range 마다 "왼쪽 이웃이 몇 개나 잘렸는지"가 달라 판정이 뒤집혔다(실측:
+# 독도 KMA_22441 파고, 2025-12-03 12:00 → 30d spike=True / 1y spike=False, 동일 값).
+# 고침: tm1 이전으로 조금 더 넓게 fetch 해서(아래 상수만큼) 국지창에 항상 진짜 실측 이웃이 있게
+# 하고, 그 결과 배열 그대로 `qc.run_qc`(스파이크는 전체 패딩 배열 기준)에 넘긴 뒤, `view_start`
+# 로 표시 구간만 트림해서 반환한다(패딩 구간 자체는 API 응답에 노출 안 됨 — 스키마 불변).
+_KMA_QC_PAD_30MIN = timedelta(days=1)     # kma_buoy2(30분 해상도) — half=5 표본(2.5h)의 10배 여유
+_KMA_QC_PAD_DAILY_DAYS = 10.0             # getDailyWaveBuoy(일별) — half=5 표본(5일)의 2배 여유(발간공백 대비)
+_KHOA_QC_PAD_DAYS = 1.0                   # KHOA(5~30분 해상도) — half=5 표본(최대 2.5h)에 넉넉한 여유
+
 _METRIC_UNITS = {
     "wave": "m", "wave_period": "s", "wind_speed": "m/s", "wind_dir": "deg",
     "water_temp": "℃", "air_temp": "℃", "pressure": "hPa",
@@ -252,7 +265,7 @@ def _daily_wave_buoy_span_points(stn_id: str, start_date, end_date) -> list[dict
 
 def _daily_wave_buoy_recent_points(
     stn_id: str, days_float: float, tm1_dt: datetime, tm2_dt: datetime,
-) -> list[dict]:
+) -> tuple[list[dict], str]:
     """§A3 픽스 — 파고부이(C) 일별 이력을, 요청 창(`tm1_dt`~`tm2_dt`, 벽시계 "지금" 기준)이
     발간지연으로 텅 비면 "지금"이 아니라 **실제 가장 최근 발간된 데이터** 기준으로 재윈도잉해
     재조회한다.
@@ -265,26 +278,41 @@ def _daily_wave_buoy_recent_points(
 
     range=24h(하루) 처럼 원래도 daily 해상도 소스에서 표본이 1개 안팎인 경우는 이 폴백을 거쳐도
     여전히 1~2개일 수 있다 — 그 자체는 정상(요청 사양에서도 허용). 폴백을 거쳐도 발간분이 아예
-    없으면(관측 시작월 이전 등) 빈 리스트를 그대로 반환한다(지어낸 값 없음)."""
-    points = _daily_wave_buoy_span_points(stn_id, tm1_dt.date(), tm2_dt.date())
-    if points or days_float >= _KMA_DAILY_FALLBACK_LOOKBACK_DAYS:
-        return points
+    없으면(관측 시작월 이전 등) 빈 리스트를 그대로 반환한다(지어낸 값 없음).
+
+    §AIQC-RANGE 픽스(2026-07-22) — 반환이 `(points, view_start)` 튜플로 바뀌었다. `points` 는 이제
+    **표시 구간보다 앞선 실제 과거 표본(패딩)을 포함할 수 있다**(`qc.run_qc` 가 전체 배열로 스파이크를
+    계산해 range 에 무관하게 같은 판정을 내도록) — 직접(비폴백) 경로는 `tm1_dt` 이전
+    `_KMA_QC_PAD_DAILY_DAYS`일을 더 조회하고, 재윈도잉(폴백) 경로는 **이미 조회해 둔 365일치
+    `broad_points` 를 자르지 않고 그대로** 돌려준다(추가 네트워크 호출 없음 — 어차피 그 반경까지
+    조회했었다). `view_start`(= "t" 와 같은 포맷의 문자열)는 진짜 표시 구간이 어디서 시작하는지
+    표시하며, 호출부가 QC 계산 후 이 경계로 최종 트림한다(패딩은 API 응답에 노출되지 않음).
+
+    ⚠️ 폴백 트리거 판정(§A3 "표시 구간이 실제로 비어있는가")은 **패딩을 뺀 진짜 표시 구간
+    (`tm1_dt.date()` 이상)에 실측치가 있는지** 로 한다 — 패딩된 `points` 자체가 비었는지로 판정하면
+    안 된다(패딩이 발간지연 경계보다 넓으면 "표시 구간은 텅 비었는데 패딩엔 데이터가 있어" 폴백이
+    안 걸리는 회귀가 생긴다 — 패딩은 10일 정도라 §A3 가 다루는 수개월 지연엔 안전하지만, 향후 더
+    큰 패딩 값으로 바꿀 경우를 대비해 판정 기준 자체를 명시적으로 분리해 둔다)."""
+    padded_start = (tm1_dt - timedelta(days=_KMA_QC_PAD_DAILY_DAYS)).date()
+    points = _daily_wave_buoy_span_points(stn_id, padded_start, tm2_dt.date())
+    view_start = tm1_dt.strftime("%Y-%m-%d") + " 00:00"  # 일별 포인트는 항상 12:00 대표시각 — 그 날 전체 포함
+    view_window_has_data = any(
+        (d := _parse_ts(p.get("t"))) is not None and d.date() >= tm1_dt.date() for p in points
+    )
+    if view_window_has_data or days_float >= _KMA_DAILY_FALLBACK_LOOKBACK_DAYS:
+        return points, view_start
 
     broad_start = (tm2_dt - timedelta(days=_KMA_DAILY_FALLBACK_LOOKBACK_DAYS)).date()
     broad_points = _daily_wave_buoy_span_points(stn_id, broad_start, tm2_dt.date())
     if not broad_points:
-        return broad_points  # 폴백 반경 안에도 발간분 전혀 없음 — 정직하게 빈 리스트
+        return broad_points, view_start  # 폴백 반경 안에도 발간분 전혀 없음 — 정직하게 빈 리스트
 
     latest_dt = _parse_ts(broad_points[-1]["t"])
     if latest_dt is None:
-        return broad_points
+        return broad_points, view_start
     window_start = latest_dt - timedelta(days=days_float)
-    out: list[dict] = []
-    for p in broad_points:
-        pt = _parse_ts(p.get("t"))
-        if pt is not None and pt >= window_start:
-            out.append(p)
-    return out
+    view_start = window_start.strftime("%Y-%m-%d %H:%M")  # latest_dt·days_float 모두 자정기준 12:00 정렬
+    return broad_points, view_start
 
 
 def _merge_latest_kma_point(points: list[dict], stn_id: str) -> None:
@@ -319,7 +347,11 @@ def _kma_timeseries(stn_id: str, days_float: float, label: str) -> dict:
     tm2_dt = now.replace(minute=(now.minute // 10) * 10, second=0, microsecond=0)
     tm1_dt = tm2_dt - timedelta(days=days_float)
 
-    records = _fetch_kma_buoy2_span(stn_id, tm1_dt, tm2_dt)
+    # §AIQC-RANGE QC 패딩 — tm1 이전으로 조금 더 넓게 조회해(위 `_KMA_QC_PAD_30MIN` 정의부 참고) `qc.run_qc`
+    # 가 표시 구간 경계 근처 점도 진짜 이웃으로 스파이크를 판정하게 한다. `view_start`(표시 구간의
+    # 진짜 시작)로 최종 트림하므로 API 응답 범위·스키마는 기존과 동일하다.
+    records = _fetch_kma_buoy2_span(stn_id, tm1_dt - _KMA_QC_PAD_30MIN, tm2_dt)
+    view_start = tm1_dt.strftime("%Y-%m-%d %H:%M")
 
     resolution = "30min"
     points: list[dict] = []
@@ -351,9 +383,9 @@ def _kma_timeseries(stn_id: str, days_float: float, label: str) -> dict:
         # §A3: 요청 창(tm1~tm2, "지금" 기준)이 발간지연으로 텅 비면 실제 최근 발간분 기준으로
         # 재윈도잉하는 폴백을 거친다(_daily_wave_buoy_recent_points 독스트링 참고). 그래도 없으면
         # (관측 시작월 이전 등) 빈 리스트 — 아래 _merge_latest_kma_point 가 최신 sea_obs 값을 더해
-        # 최소 1개는 보장한다.
+        # 최소 1개는 보장한다. 반환값은 (points, view_start) — §AIQC-RANGE QC 패딩용 view_start 로 교체.
         resolution = "daily"
-        points = _daily_wave_buoy_recent_points(stn_id, days_float, tm1_dt, tm2_dt)
+        points, view_start = _daily_wave_buoy_recent_points(stn_id, days_float, tm1_dt, tm2_dt)
 
     _merge_latest_kma_point(points, stn_id)
 
@@ -376,6 +408,7 @@ def _kma_timeseries(stn_id: str, days_float: float, label: str) -> dict:
         "unit_notes": unit_notes,
         "points": points,
         "qc_summary": {"flagged_count": flagged_count, "checked": any_checked},
+        "_view_start": view_start,  # §AIQC-RANGE — 내부 전용, get_timeseries 에서 소비 후 응답에서 제거됨
     }
 
 
@@ -454,11 +487,15 @@ def _khoa_timeseries(obs_code: str, days_float: float, label: str) -> dict:
         )
         if coverage_ok:
             fast_path_24h = True
+            # §AIQC-RANGE QC 패딩(2026-07-22) — 예전엔 여기서 window_start(=now-24h) 이전을 즉시
+            # 클립했다. `fetch_oceangrid_day(어제)`가 이미 "어제 00:00~오늘"(최대 48h) 전체를 주므로
+            # window_start 이전 실제 표본이 공짜로 남아있다(추가 호출 없음) — 이걸 버리지 않고 그대로
+            # 두면 `qc.run_qc`(view_start 트림)가 경계 근처 점에 진짜 이웃을 주고 range 별 판정이
+            # 일관돼진다. 최종 표시 범위 트림은 get_timeseries → qc.run_qc(view_start=window_start)
+            # 가 담당하므로 여기서는 클립하지 않는다(API 응답 자체는 기존과 동일하게 window_start
+            # 이후만 보인다).
             yesterday = (now - timedelta(days=1)).date()
             for r in khoa_api.fetch_oceangrid_day(obs_code, yesterday.strftime("%Y%m%d")):
-                t_parsed = _parse_ts(r.get("t"))
-                if t_parsed is not None and t_parsed < window_start:
-                    continue  # 2일 창(어제 00:00~오늘 00:00 포함) 중 window_start 이전은 클립
                 points.append({
                     "t": r.get("t"),
                     "wave": r.get("wave"),
@@ -471,9 +508,6 @@ def _khoa_timeseries(obs_code: str, days_float: float, label: str) -> dict:
                     "qc": {"flagged": False, "checked": False},
                 })
             for r in today_raw:
-                t_parsed = _parse_ts(r.get("obsrvnDt"))
-                if t_parsed is not None and t_parsed < window_start:
-                    continue
                 points.append(_khoa_point_from_tw_recent(r))
 
     # §버그픽스(2026-07-20) — 예전엔 `days_capped > 2.0` 인 범위(7d 이상)만 oceangrid 누적 이력을
@@ -490,12 +524,16 @@ def _khoa_timeseries(obs_code: str, days_float: float, label: str) -> dict:
     # (2026-07-22 갱신: 위 fast_path_24h 가 이미 채웠으면 — 즉 24h 이면서 커버리지 충분하면 — 이
     # 느린 라이브 경로를 건너뛴다. 7d/30d/1y 및 24h 커버리지 부족 폴백은 기존 그대로.)
     if not fast_path_24h and days_capped >= 1.0:
-        start_date = (now - timedelta(days=days_capped)).date()
+        # §AIQC-RANGE QC 패딩(2026-07-22) — `days_capped`(사용자 노출 상한) 는 그대로 두고, 실제
+        # fetch 시작만 `_KHOA_QC_PAD_DAYS` 만큼 더 앞당긴다(half=5 국지창에 진짜 이웃을 주기 위함,
+        # `_khoa_timeseries` 상단 상수 정의부 참고). window_start 이전 클립도 예전엔 여기서 즉시
+        # 했지만, 이제는 하지 않는다 — 패딩 구간을 남겨둬야 qc.run_qc(view_start=window_start) 가
+        # 경계 근처 점에 진짜 이웃을 주고 range 별 판정이 일관돼진다(최종 표시 트림은 거기서 담당,
+        # API 응답 자체는 기존과 동일하게 window_start 이후만 보인다). cap_note(사용자 노출 상한
+        # 안내)는 `days_float`/`_KHOA_HIST_CAP_DAYS` 그대로라 이 패딩과 무관하게 정확하다.
+        start_date = (now - timedelta(days=days_capped + _KHOA_QC_PAD_DAYS)).date()
         end_date = now.date()
         for r in khoa_api.fetch_oceangrid_range(obs_code, start_date, end_date):
-            t_parsed = _parse_ts(r.get("t"))
-            if t_parsed is not None and t_parsed < window_start:
-                continue  # 캘린더-일 단위 조회라 창 시작 이전 일부가 섞여 들어옴 — 요청 창으로 클립
             points.append({
                 "t": r.get("t"),
                 "wave": r.get("wave"),
@@ -544,19 +582,29 @@ def _khoa_timeseries(obs_code: str, days_float: float, label: str) -> dict:
         ),
         "points": points,
         "qc_summary": {"flagged_count": 0, "checked": False},
+        # §AIQC-RANGE — 내부 전용(get_timeseries 에서 소비 후 응답에서 제거됨). 위에서 oceangrid
+        # fetch 시작을 앞당겨(패딩) window_start 이전 실제 표본도 `points` 에 남아있을 수 있으므로,
+        # `qc.run_qc` 가 스파이크는 전체(패딩 포함) 배열로 계산하고 이 경계로 표시 구간만 트림한다.
+        "_view_start": window_start.strftime("%Y-%m-%d %H:%M"),
     }
 
 
 # ── 알고리즘 AI-QC 병합(Phase 4) ────────────────────────────────────────────
 
-def _apply_ai_qc(result: dict, metric: str = "wave") -> None:
+def _apply_ai_qc(result: dict, metric: str = "wave", view_start: Optional[str] = None) -> None:
     """`qc.py`(robust z-score 스파이크 + 결측/간격 탐지)를 points 에 병합한다.
 
     관측기관 QC(각 포인트의 `qc` 필드, AQC/MQC 기반)는 그대로 두고 `ai_qc` 필드를 추가한다 —
     두 QC 는 서로 다른 근거(기관 검증 vs 통계적 이상치)이므로 프론트에서 구분 표시할 수 있게 병합하지
     않는다. 헤드라인 변수인 파고(wave)를 기준으로 판정한다(KMA/KHOA 공통 필드).
+
+    §AIQC-RANGE(2026-07-22): `result["points"]` 는 표시 구간(view window) 이전의 실제 과거 표본을
+    패딩으로 포함하고 있을 수 있다(`_kma_timeseries`/`_khoa_timeseries` 참고). `view_start` 를
+    그대로 `qc.run_qc` 에 넘기면 스파이크는 패딩을 포함한 전체 배열로 계산(경계 근처 점도 range 에
+    무관하게 진짜 이웃을 갖는다)하고, 반환되는 `points`/summary 는 `view_start` 로 트림된 표시
+    구간만 담는다 — 이 함수 호출 이후 `result["points"]` 의 길이가 줄어들 수 있다(패딩 제거).
     """
-    qc_out = qc_mod.run_qc(result["points"], metric)
+    qc_out = qc_mod.run_qc(result["points"], metric, view_start=view_start)
     result["points"] = qc_out["points"]
     result["qc_summary"]["ai_spike_count"] = qc_out["summary"]["spike_count"]
     result["qc_summary"]["ai_gap_count"] = qc_out["summary"]["gap_count"]
@@ -596,9 +644,18 @@ def get_timeseries(
     else:
         return None
 
+    # §AIQC-RANGE(2026-07-22) — 위 두 빌더가 표시 구간(view window) 이전의 실제 과거 표본을
+    # "패딩"으로 덧붙여 반환했을 수 있다(qc.detect_spikes 경계 컨텍스트용, 모듈 상단 상수 정의부
+    # 참고). `_view_start` 는 그 경계(내부 전용 키, 아래에서 pop 해 응답 스키마에서 제거)이고,
+    # 실제 트림은 `_apply_ai_qc` → `qc.run_qc(view_start=...)` 가 스파이크 계산 이후에 수행한다
+    # (그래야 트림 전 전체 배열로 경계 근처 점도 진짜 이웃 컨텍스트를 얻는다).
+    view_start = result.pop("_view_start", None)
+
     # 시연 시나리오(§13-2) — 큐레이션 지점·metric 한정 스파이크(+선택적 결측 구간) 주입.
-    # 게이트 꺼짐/대상 아님이면 무해(원본 그대로). result["id"] 는 소스별 정규화된 station id
+    # 게이트 꺼짐/대상 아니면 무해(원본 그대로). result["id"] 는 소스별 정규화된 station id
     # (KMA_xxx 또는 KHOA obsCode 그대로)라 demo_scenario 의 큐레이션 표 키와 그대로 맞는다.
+    # offset_from_end 는 배열 "끝"에서부터 세므로 위 패딩(배열 앞쪽에 덧붙음)과 무관하게 항상
+    # 같은 절대시각을 가리킨다 — 패딩 전후로 주입 위치가 바뀌지 않는다.
     result["points"] = demo_scenario.inject_qc_spikes(result["points"], metric, result["id"])
 
     # §A2 픽스 — 상태 override(지연/미수신) 대상 지점은 시계열도 합성 경과시간만큼 끝을 잘라
@@ -607,10 +664,16 @@ def get_timeseries(
     # 지점 집합이라 겹치지 않는다.
     result["points"] = demo_scenario.apply_timeseries_override(result["points"], result["id"])
 
-    # 위 두 단계(스파이크 주입·시계열 절단)로 points 가 바뀌었을 수 있으므로, 그 전에 원본
-    # records 기준으로 미리 집계돼 있던 관측기관 QC 카운트(qc_summary.flagged_count/checked)를
-    # 최종 points 기준으로 다시 세어 stale 값이 남지 않게 한다(요청사항: "잘려나간 포인트가
-    # stats/qc_summary 에 남지 않게").
+    # §AIQC-RANGE — 스파이크는 패딩 포함 전체 배열로 계산하고, 반환되는 points 는 view_start 로
+    # 트림된 표시 구간만 담는다(패딩은 API 응답에 노출되지 않음 — 아래 institution QC 카운트·
+    # stats·cadence 는 전부 이 트림된 최종 points 기준으로 계산해야 패딩 구간이 섞여 들어가지
+    # 않는다. 그래서 institution QC 재집계를 이 호출 "다음"으로 옮겼다 — 예전엔 반대 순서였다).
+    _apply_ai_qc(result, metric=metric, view_start=view_start)
+
+    # 위 단계들(패딩 트림·스파이크 주입·시계열 절단)로 points 가 바뀌었으므로, 원본 records 기준으로
+    # 미리 집계돼 있던 관측기관 QC 카운트(qc_summary.flagged_count/checked)를 최종(표시 구간) points
+    # 기준으로 다시 세어 stale 값이 남지 않게 한다(요청사항: "잘려나간/패딩 포인트가 stats/qc_summary
+    # 에 남지 않게").
     result["qc_summary"]["flagged_count"] = sum(
         1 for p in result["points"] if p.get("qc", {}).get("flagged")
     )
@@ -618,7 +681,6 @@ def get_timeseries(
         p.get("qc", {}).get("checked") for p in result["points"]
     )
 
-    _apply_ai_qc(result, metric=metric)
     result["stats"] = _compute_stats(result["points"])
     result["cadence_min"] = _median_cadence_minutes(result["points"])
 

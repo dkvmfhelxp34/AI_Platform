@@ -292,6 +292,8 @@ def _khoa_stations() -> list[dict]:
             "lat": b.get("lat"),
             "form": None,
             "obs_start_date": detail.get("obs_start_date"),  # 관측개시일(비공식 경로 실측, 없으면 None)
+            "address": detail.get("address"),  # 관측소 주소(비공식 경로 실측, 없으면 None)
+            "obs_type": detail.get("obs_type"),  # 관측유형(비공식 경로 실측, 없으면 None)
             "specs": None,  # KHOA 는 센서고 제원 API 미제공(스코프 제외) — KMA 만 specs 채움
         })
     return out
