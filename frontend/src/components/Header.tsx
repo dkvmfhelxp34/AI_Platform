@@ -70,8 +70,8 @@ export default function Header() {
         }}>
           <BrandMark />
         </div>
-        <div style={{ fontWeight: 700, fontSize: 17, color: 'var(--t-hi)', lineHeight: 1.2, letterSpacing: '-0.01em' }}>
-          부이 모니터링 플랫폼
+        <div style={{ fontWeight: 700, fontSize: 15.5, color: 'var(--t-hi)', lineHeight: 1.2, letterSpacing: '-0.01em', whiteSpace: 'nowrap' }}>
+          통합 해상 부이 모니터링 및 AI Agent 플랫폼
         </div>
       </div>
 

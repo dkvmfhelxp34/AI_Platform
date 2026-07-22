@@ -37,19 +37,20 @@ import {
 // 균형 다크 재스킨 패스(2026-07-16, §17) + 정통 다크 엘리베이션 정정(§20): RISA식 그리드·축·단위
 // 구조는 유지하되, 플롯면은 카드(--bg-elev)보다 밝은 최고 엘리베이션 --bg-float 로 "떠 있는" 분석
 // 표면을 살린다(팝업·툴팁과 동일 티어 — 아래 PLOT_BG_HEX 참고).
-const ACCENT_HEX = '#4E9AC9'    // 관측 — 마린 블루 실선(index.css --accent)
-const FORECAST_HEX = '#DDA53B'  // 예측(점선) — 앰버, 관측(블루)·지연상태색과 구분되는 난색
-const QC_INST_HEX = '#E0699A'   // 관측기관 QC 플래그(로즈) — 다크 플롯 위 대비 확보를 위해 밝게
-const QC_AI_HEX = '#FF3B30'     // 알고리즘(AI) 이상감지(선명한 빨강) — 기관 QC(로즈)·상태색(--lost #F0575C)과
-                                 // 구분되는 채도 높은 레드, 다크 플롯(#2F3C4B) 위 대비 확보
-const GRID_HEX = '#3A4756'      // 그리드라인(수평) — 다크 플롯면 위 옅지만 확실히 보이는 수평 그리드
-const LINE_HEX = '#47576A'
-const TLO_HEX = '#B7C4D1'
-const AXIS_HEX = '#C2CEDA'      // 축 눈금(1단 시각) — §18-1 "축·눈금 밝게(--t-mid)", TLO_HEX보다 한 단 밝게
-const CROSSHAIR_HEX = 'rgba(226,232,240,0.55)' // hover 크로스헤어 — 시리즈색과 겹치지 않는 중립 가이드선
-// 플롯 영역 배경 — §20: 차트 플롯은 팝업/툴팁과 같은 최고 엘리베이션(--bg-float #2F3C4B) 티어.
-// 카드(--bg-elev #26313E)보다 확실히 밝아 "떠 있는" 분석 표면으로 읽힌다 — dot cutout 스트로크와 동일 색.
-const PLOT_BG_HEX = '#2F3C4B'
+// §27 — 시계열 플롯을 흰 "종이" 분석면으로 전환(GeoDAP 등 계기 대시보드 참고). 라인·격자·QC 잉크가
+// 흰 배경에서 최고 대비를 갖는다. 다크 카드(--bg-elev) 안에 흰 플롯이 떠 있는 구조 — 플랫폼 다크 정체성은
+// 드로어·카드에서 유지하고, 데이터 표면만 밝게 뒤집는다. 시리즈색은 흰 배경 대비를 위해 한 단 진하게 재보정.
+const ACCENT_HEX = '#2E7DB4'    // 관측 — 마린 블루 실선(흰 플롯 대비 위해 --accent #4E9AC9 보다 한 단 진하게)
+const FORECAST_HEX = '#C98A1E'  // 예측(점선) — 앰버, 관측(블루)·상태색과 구분되는 난색(흰 배경 대비 진하게)
+const QC_INST_HEX = '#D24E86'   // 관측기관 QC 플래그(로즈) — 흰 플롯 위 대비 확보를 위해 진하게
+const QC_AI_HEX = '#FF3B30'     // 알고리즘(AI) 이상감지(선명한 빨강) — 흰 플롯 위에서도 강하게 튐(경보색과 계열)
+const GRID_HEX = '#E6EBF0'      // 그리드라인 — 흰 플롯면 위 옅은 회색 수평/수직 격자
+const LINE_HEX = '#D4DBE3'      // 축선 — 흰 배경 위 옅은 회색
+const TLO_HEX = '#8794A2'       // X축 2단 눈금 아랫줄(날짜) — 중간 회색
+const AXIS_HEX = '#5A6675'      // 축 눈금(1단 시각/Y축) — 흰 배경 위 짙은 슬레이트(가독)
+const CROSSHAIR_HEX = 'rgba(51,65,85,0.35)' // hover 크로스헤어 — 흰 배경 위 중립 다크 가이드선
+// 플롯 영역 배경 — 흰색. dot cutout 스트로크(흰색)는 흰 면 위에서 자연히 무해로(테두리 없이 점만) 읽힌다.
+const PLOT_BG_HEX = '#FFFFFF'
 
 const METRICS: { key: TimeseriesMetric; label: string; unit: string }[] = [
   { key: 'wave', label: '파고', unit: 'm' },
@@ -695,7 +696,7 @@ function TimeseriesSection({ buoy, range, setRange, metric, setMetric, ts, loadi
                 사이에 항상 ~6px 여유를 둔다(4개 지표 전부 배지 높이가 동일해 이 여유는 지표 무관). */}
             <div className="tnum" style={{
               position: 'absolute', top: 12, left: 16, zIndex: 2, fontSize: 13, fontWeight: 700,
-              color: 'var(--t-mid)', background: 'var(--bg-panel)', border: '1px solid var(--line)',
+              color: '#5A6675', background: '#F2F5F9', border: '1px solid #E1E7EE',
               borderRadius: 5, padding: '2px 7px', pointerEvents: 'none',
             }}>{metricCfg.unit}</div>
             <ResponsiveContainer width="100%" height={264}>
@@ -752,7 +753,7 @@ function TimeseriesSection({ buoy, range, setRange, metric, setMetric, ts, loadi
                 )}
                 {forecastActive && nowT && (
                   <ReferenceLine x={nowT} stroke={TLO_HEX} strokeDasharray="2 2" strokeWidth={1.3}
-                    label={{ value: buoy.status === '정상' ? '' : '최종 수신', position: 'insideBottomLeft', fill: 'var(--t-hi)', fontSize: 13, fontWeight: 700 }} />
+                    label={{ value: buoy.status === '정상' ? '' : '최종 수신', position: 'insideBottomLeft', fill: '#334155', fontSize: 13, fontWeight: 700 }} />
                 )}
 
                 {/* 관측 — 부드러운 그라디언트 Area + 표본점 마커(§18-1, 많으면 자동 솎임 — renderObsDot) */}
