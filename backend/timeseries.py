@@ -381,9 +381,100 @@ def _kma_timeseries(stn_id: str, days_float: float, label: str) -> dict:
 
 # ── KHOA ─────────────────────────────────────────────────────────────────────
 
+# §GOAL1 성능 픽스(2026-07-22) 커버리지 임계값 — range=24h 전용 빠른 경로(아래 참고)가 twRecent
+# 단독으로 충분한지 판단하는 기준. 실측(2026-07-22, KST 14:47 시점): `fetch_tw_recent_today()`(당일
+# 00:00~지금 전체, numOfRows 확장)는 TW_0095(5분 간격) 177건, TW_0078(10분 간격) 89건, KG_0024(30분
+# 간격) 29건 — 전부 span(최초~최신 관측시각 차)이 elapsed_today_min(자정 이후 경과분)에 표본 간격
+# 이내로 근접했다(정상 지점은 "당일 이력이 거의 빠짐없이 다 옴"). 반면 과거 실측된 진짜 장애 사례
+# (완도항 twRecent 자체가 갱신을 못 받아 0건 — khoa_api.py 원 버그픽스 주석 참고)나 KG_0028(현재
+# 미수신, twRecent NODATA_ERROR)은 today_ts 자체가 비거나 span 이 경과시간에 크게 못 미친다.
+# 0.6 이면 그 사이(정상 지점의 표본 간격 오차 vs 진짜 장애)를 넉넉히 가른다.
+#
+# 알려진 예외(정상 동작, 회귀 아님) — `HB_` 계열(한수원 원전 인근 6개소)은 실측상 1분 간격으로
+# 보고해 하루 표본이 twRecent `numOfRows` 상한(300, 위 khoa_api.py 실측)을 넘는다. 이 경우
+# `fetch_tw_recent_today()` 가 반환하는 300건은 "당일 00:00~지금"이 아니라 "최근 300분"만 담아
+# span 이 elapsed_today_min 에 크게 못 미치고(오전 8~9시 이후 상시) 이 임계값에서 정확히 폴백
+# 판정된다 — 즉 이 6개소는 (기존과 동일하게) 느린 oceangrid 경로를 그대로 타고, 밀도·정확성은
+# 그대로 보존된다(단지 이번 픽스의 속도 이득만 못 받음 — twRecent API 자체의 페이지 상한이라
+# 코드로 우회 불가, 향후 필요하면 별도 백그라운드 warm-cache 로 다뤄야 함).
+_KHOA_24H_TW_COVERAGE_RATIO = 0.6
+
+
+def _khoa_point_from_tw_recent(r: dict) -> dict:
+    """twRecent raw 레코드 → 정규화 포인트. 당일 fast-path 와 twRecent tail-merge 양쪽에서 공유."""
+    return {
+        "t": r.get("obsrvnDt"),
+        "wave": _num(r.get("wvhgt")),
+        "wave_period": _num(r.get("wvpd")),
+        "wind_speed": _num(r.get("wspd")),
+        "wind_dir": _num(r.get("wndrct")),
+        "water_temp": _num(r.get("wtem")),
+        "air_temp": _num(r.get("artmp")),
+        "pressure": _num(r.get("atmpr")),
+        "qc": {"flagged": False, "checked": False},
+    }
+
+
 def _khoa_timeseries(obs_code: str, days_float: float, label: str) -> dict:
     now = kma_marine.now_kst()
     days_capped = min(days_float, _KHOA_HIST_CAP_DAYS)
+    window_start = now - timedelta(days=days_float)
+
+    points: list[dict] = []
+    fast_path_24h = False
+
+    # §GOAL1 성능 픽스(2026-07-22) — range=24h 는(레거시 `hours=24` 포함, 둘 다 label="24h") 예전엔
+    # 아래 oceangrid_range 경로(§2026-07-20 버그픽스, 바로 아래 주석)를 그대로 탔는데, 이 경로는
+    # 항상 "오늘"을 창에 포함시키고 오늘은 확정과거가 아니라(`_is_confirmed_past`) 디스크캐시가 안 돼
+    # 매 콜드요청마다 oceangrid 라이브 4엔드포인트(파고/기온기압/수온/풍향풍속)를 호출했다 — 실측
+    # 콜드 ~4.5s. twRecent 는 기본 10건뿐이지만 `fetch_tw_recent_today()`(numOfRows 확장, 단일
+    # 엔드포인트, 실측 ~0.1~0.15s)로 "당일 00:00~지금" 전체를 한 번에 받을 수 있다(khoa_api.py
+    # 실측 주석 참고) — 그래서 range=24h 는 twRecent 를 1차 소스로 쓰고, 커버리지가 부족할 때만
+    # (아래 `_KHOA_24H_TW_COVERAGE_RATIO`) 기존 oceangrid_range 경로로 안전하게 폴백한다.
+    #
+    # 밀도 보강(2026-07-22) — window_start(=now-24h)는 항상 "어제 같은 시각"이라, twRecent(오늘
+    # 자정~지금)만으로는 어제 저녁~자정 구간이 통째로 빠져 24h 인데 실질 절반만 보이는 문제가 있었다
+    # (실측: 이 보강 전엔 TW_0095 24h 가 287점(어제 15:00~오늘 14:50, 풀 24h)에서 178점(오늘
+    # 00:00~14:45, ~14.75h)으로 줄었다). `fetch_oceangrid_day(어제)`는 확정과거라 디스크캐시
+    # 대상(§_is_confirmed_past) — 이미 캐시돼 있으면 파일 읽기 수준, 최초 1회만 느리고(7d/30d 가
+    # 이미 겪는 것과 동일한 일회성 비용, 이번 픽스 범위 밖) 그 다음부터는 계속 빠르다. 그래서
+    # "어제(oceangrid, 디스크캐시 우선) + 오늘(twRecent)" 조합이면 라이브 4엔드포인트 호출 없이도
+    # 풀 24h 밀도를 그대로 유지한다.
+    if label == "24h":
+        today_raw = khoa_api.fetch_tw_recent_today(obs_code)
+        today_ts = sorted(
+            t for t in (_parse_ts(r.get("obsrvnDt")) for r in today_raw)
+            if t is not None and t >= window_start
+        )
+        midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        elapsed_today_min = max((now - midnight).total_seconds() / 60.0, 0.0)
+        span_min = (today_ts[-1] - today_ts[0]).total_seconds() / 60.0 if len(today_ts) >= 2 else 0.0
+        coverage_ok = bool(today_ts) and (
+            elapsed_today_min < 1.0 or span_min >= _KHOA_24H_TW_COVERAGE_RATIO * elapsed_today_min
+        )
+        if coverage_ok:
+            fast_path_24h = True
+            yesterday = (now - timedelta(days=1)).date()
+            for r in khoa_api.fetch_oceangrid_day(obs_code, yesterday.strftime("%Y%m%d")):
+                t_parsed = _parse_ts(r.get("t"))
+                if t_parsed is not None and t_parsed < window_start:
+                    continue  # 2일 창(어제 00:00~오늘 00:00 포함) 중 window_start 이전은 클립
+                points.append({
+                    "t": r.get("t"),
+                    "wave": r.get("wave"),
+                    "wave_period": r.get("wave_period"),
+                    "wind_speed": r.get("wind_speed"),
+                    "wind_dir": r.get("wind_dir"),
+                    "water_temp": r.get("water_temp"),
+                    "air_temp": r.get("air_temp"),
+                    "pressure": r.get("pressure"),
+                    "qc": {"flagged": False, "checked": False},
+                })
+            for r in today_raw:
+                t_parsed = _parse_ts(r.get("obsrvnDt"))
+                if t_parsed is not None and t_parsed < window_start:
+                    continue
+                points.append(_khoa_point_from_tw_recent(r))
 
     # §버그픽스(2026-07-20) — 예전엔 `days_capped > 2.0` 인 범위(7d 이상)만 oceangrid 누적 이력을
     # 조회하고, 그보다 짧은(24h 포함!) 범위는 twRecent "최근 롤링"(관측 실측상 최대 10건)만으로
@@ -396,11 +487,11 @@ def _khoa_timeseries(obs_code: str, days_float: float, label: str) -> dict:
     # 고침: 1일(24h) 이상 범위는 전부 이 누적 이력(oceangrid day-loop)에서 만들고 요청 창으로 클립한다
     # (7d 와 동일 소스). twRecent 보다 짧은 레거시 `hours`(<24h, range 미지정) 만 예전처럼 롤링 전용
     # 으로 남겨(호출량 관리, 이 범위는 애초에 버그 재현 대상이 아니었다).
-    points: list[dict] = []
-    if days_capped >= 1.0:
+    # (2026-07-22 갱신: 위 fast_path_24h 가 이미 채웠으면 — 즉 24h 이면서 커버리지 충분하면 — 이
+    # 느린 라이브 경로를 건너뛴다. 7d/30d/1y 및 24h 커버리지 부족 폴백은 기존 그대로.)
+    if not fast_path_24h and days_capped >= 1.0:
         start_date = (now - timedelta(days=days_capped)).date()
         end_date = now.date()
-        window_start = now - timedelta(days=days_float)
         for r in khoa_api.fetch_oceangrid_range(obs_code, start_date, end_date):
             t_parsed = _parse_ts(r.get("t"))
             if t_parsed is not None and t_parsed < window_start:
@@ -417,23 +508,20 @@ def _khoa_timeseries(obs_code: str, days_float: float, label: str) -> dict:
                 "qc": {"flagged": False, "checked": False},
             })
 
-    recent = khoa_api.fetch_tw_recent_series(obs_code)
-    last_t = points[-1]["t"] if points else None
-    for r in recent:
-        t = r.get("obsrvnDt")
-        if not t or (last_t is not None and t <= last_t):
-            continue  # 이미 이력에 포함(또는 더 과거) — 중복 방지
-        points.append({
-            "t": t,
-            "wave": _num(r.get("wvhgt")),
-            "wave_period": _num(r.get("wvpd")),
-            "wind_speed": _num(r.get("wspd")),
-            "wind_dir": _num(r.get("wndrct")),
-            "water_temp": _num(r.get("wtem")),
-            "air_temp": _num(r.get("artmp")),
-            "pressure": _num(r.get("atmpr")),
-            "qc": {"flagged": False, "checked": False},
-        })
+    # 24h 빠른 경로를 탔으면 이 tail-merge 는 순수 중복이다 — `today_raw` 가 이미 같은 twRecent
+    # 엔드포인트의 "지금 시점 최신값"을 포함하므로(위에서 numOfRows 만 다르게 요청) 여기서 다시
+    # 불러도 전부 dedupe 되어 버려진다. 그럼에도 twRecent 는 외부 API 라 개별 호출 지연폭이 커
+    # (실측 0.1~5s, apis.data.go.kr 자체 변동성) 얻는 것 없는 호출 하나를 추가하면 GOAL1 이 줄이려는
+    # 지연을 스스로 되살릴 수 있어 이 경우만 건너뛴다. 7d/30d/1y·24h 커버리지 폴백은 기존 그대로
+    # (오히려 oceangrid "오늘" 스냅샷이 캐시로 살짝 묵었을 수 있어 최신값 보강에 실제로 쓰인다).
+    if not fast_path_24h:
+        recent = khoa_api.fetch_tw_recent_series(obs_code)
+        last_t = points[-1]["t"] if points else None
+        for r in recent:
+            t = r.get("obsrvnDt")
+            if not t or (last_t is not None and t <= last_t):
+                continue  # 이미 이력에 포함(또는 더 과거) — 중복 방지
+            points.append(_khoa_point_from_tw_recent(r))
     points.sort(key=lambda p: p.get("t") or "")
 
     cap_note = ""

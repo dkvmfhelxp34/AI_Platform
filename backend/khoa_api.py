@@ -230,16 +230,9 @@ def fetch_tw_recent(obs_code: str) -> Optional[dict]:
     return out
 
 
-def fetch_tw_recent_series(obs_code: str) -> list[dict]:
-    """부이 최근 롤링 시계열(twRecent 응답 전체 — 관측 실측상 최대 10건).
-
-    간격은 지점별로 다름(TW_* 연안부이 ~5분, KG_* 심해부이 ~30분 실측 확인) — 요청 파라미터로
-    범위를 넓힐 수 없는 "최근 N건 롤링" 서비스이므로, 이 함수는 그 롤링 윈도우 전체를 오래된→최신
-    순으로 반환한다. 과거 이력이 더 필요하면 docs/oceangrid_probe.md 의 비공식 백필 경로를 쓴다.
-    실패/결측 시 빈 리스트.
-    """
-    params = {"serviceKey": require_khoa_key(), "obsCode": obs_code, "type": "json"}
-    data = _cached_get(("tw_recent", obs_code), TW_RECENT_URL, params, _TTL_TW_RECENT)
+def _parse_tw_recent_items(data: Optional[dict], obs_code: str) -> list[dict]:
+    """twRecent 응답(JSON body.items.item) → 정규화 레코드 리스트(오래된→최신). 공통 파싱을
+    `fetch_tw_recent_series`/`fetch_tw_recent_today` 가 공유(numOfRows 값만 다름)."""
     if not data:
         return []
     try:
@@ -257,6 +250,45 @@ def fetch_tw_recent_series(obs_code: str) -> list[dict]:
         out.append(rec)
     out.sort(key=lambda r: r.get("obsrvnDt") or "")
     return out
+
+
+def fetch_tw_recent_series(obs_code: str) -> list[dict]:
+    """부이 최근 롤링 시계열(twRecent 기본 응답 — 관측 실측상 최대 10건).
+
+    간격은 지점별로 다름(TW_* 연안부이 ~5분, KG_* 심해부이 ~30분 실측 확인) — `numOfRows` 를 주지
+    않으면(기본 10) "최근 N건 롤링"만 온다. 이 함수는 그 기본 롤링 윈도우를 오래된→최신 순으로
+    반환한다(다른 호출부와 캐시 키 공유 — 아래 참고). 당일 전체 이력이 필요하면
+    `fetch_tw_recent_today()` 를 쓴다. 실패/결측 시 빈 리스트.
+    """
+    params = {"serviceKey": require_khoa_key(), "obsCode": obs_code, "type": "json"}
+    data = _cached_get(("tw_recent", obs_code), TW_RECENT_URL, params, _TTL_TW_RECENT)
+    return _parse_tw_recent_items(data, obs_code)
+
+
+# numOfRows 상한 실측(2026-07-22): 300=정상, 310 이상은 resultCode=10
+# (INVALID_REQUEST_PARAMETER_ERROR). twRecent 는 `numOfRows` 를 키워도 기간 파라미터가 없으므로
+# 이전 달력일로는 안 넘어가고 **당일(KST) 00:00~지금**의 전체 표본을 준다(실측: TW_0095 5분 간격
+# 177건/00:00~14:40, TW_0078 10분 간격 89건/00:00~14:40, KG_0024 30분 간격 29건/00:00~14:00 —
+# 전부 latency ~0.1~0.15s, 기본 10건 요청과 동일하게 단일 엔드포인트 호출 1회). 300 은 가장 촘촘한
+# 5분 간격 지점의 하루 최대 표본(00:00~24:00 ≈288건)도 여유 있게 담는 값.
+_TW_RECENT_TODAY_ROWS = 300
+
+
+def fetch_tw_recent_today(obs_code: str) -> list[dict]:
+    """당일(KST) 00:00~현재 twRecent 전체(위 실측대로 `numOfRows` 를 키워 단일 호출로 확보) —
+    `timeseries.py` `_khoa_timeseries()` 의 range=24h 전용 빠른 경로(oceangrid 당일 라이브
+    4엔드포인트 호출 회피)에 쓴다. 반환은 오래된→최신 정렬.
+
+    기본 `fetch_tw_recent_series()`(numOfRows 생략, 다른 호출부와 캐시 공유 — live_cache.py 참고)
+    와는 응답 내용이 다르므로 별도 캐시 키(`"tw_recent_today"`)를 쓴다 — 섞이면 안 됨. TTL 은
+    twRecent 자체 갱신 주기에 맞춰 동일(`_TTL_TW_RECENT`, 60초). 실패/결측 시 빈 리스트.
+    """
+    params = {
+        "serviceKey": require_khoa_key(), "obsCode": obs_code, "type": "json",
+        "numOfRows": _TW_RECENT_TODAY_ROWS,
+    }
+    data = _cached_get(("tw_recent_today", obs_code), TW_RECENT_URL, params, _TTL_TW_RECENT)
+    return _parse_tw_recent_items(data, obs_code)
 
 
 # ── noonWave (국가해양관측망 파랑, KG_ 심해부이 품질 최적) ────────────────────

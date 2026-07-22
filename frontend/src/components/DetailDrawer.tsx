@@ -172,6 +172,35 @@ function exportCsv(buoy: MergedBuoy, range: TimeseriesRange, points: TimeseriesP
   URL.revokeObjectURL(url)
 }
 
+// ── GOAL 2: 클라이언트 stale-while-revalidate 캐시(성능 개선, 2026-07) ──────────
+// KHOA 24h 콜드요청(~4.5s — backend/timeseries.py _khoa_timeseries 참고)을 포함해 동일
+// 지점/구간을 다시 조회할 때(구간 재방문 · 드로어 닫았다 다시 열기) 매번 로딩 스피너부터
+// 보여주지 않도록, 마지막으로 받은 응답을 모듈 전역 Map 에 잠깐 들고 있다가 즉시 렌더하고
+// 그 아래에서 기존 fetch 를 그대로(백그라운드 재검증으로) 진행해 최신값이 오면 그대로
+// 교체한다. 세션이 길어져도 무한정 자라지 않게 bounded LRU(최대 60개, 가장 오래된 항목부터
+// 제거)로 캡핑한다. 서버 응답 스키마·범위별 소스 로직은 건드리지 않는 순수 프론트 렌더 캐시.
+const CLIENT_CACHE_MAX = 60
+const TS_CACHE = new Map<string, TimeseriesResponse>()
+const FC_CACHE = new Map<string, ForecastResponse>()
+
+function tsCacheKey(source: string, id: string, range: TimeseriesRange): string {
+  return `${source}|${id}|${range}`
+}
+function fcCacheKey(source: string, id: string, metric: TimeseriesMetric): string {
+  return `${source}|${id}|${metric}`
+}
+/** 삽입/갱신 시 "가장 최근" 위치로 옮기고(delete 후 재 set — Map 은 삽입순 반복), 상한을
+ * 넘으면 반복 순서상 가장 오래된 항목부터 제거하는 단순 bounded LRU. */
+function cachePut<V>(map: Map<string, V>, key: string, value: V): void {
+  if (map.has(key)) map.delete(key)
+  map.set(key, value)
+  while (map.size > CLIENT_CACHE_MAX) {
+    const oldest = map.keys().next().value
+    if (oldest === undefined) break
+    map.delete(oldest)
+  }
+}
+
 // ── Main ─────────────────────────────────────────────────────────────────
 export default function DetailDrawer() {
   const { stations, live, detailOpenId, closeDetail, openDetail } = useStore(
@@ -199,16 +228,33 @@ export default function DetailDrawer() {
   useEffect(() => {
     if (!buoy) return
     let cancelled = false
-    setLoading(true)
-    setError(null)
+    // GOAL 2 — 캐시 히트면 로딩 스피너 없이 마지막 응답을 즉시 렌더하고, 아래 fetch 는 그대로
+    // 진행해(취소되지 않음) 백그라운드 재검증으로 최신값이 오면 교체한다. 미스면 기존 그대로
+    // 로딩 상태를 보여준다(동작 동일, 캐시는 그 앞에 얹힐 뿐).
+    const cacheKey = tsCacheKey(buoy.source, buoy.id, range)
+    const cached = TS_CACHE.get(cacheKey)
+    if (cached) {
+      setTs(cached)
+      setError(null)
+      setLoading(false)
+    } else {
+      setLoading(true)
+      setError(null)
+    }
     fetch(`/api/timeseries?source=${buoy.source}&id=${encodeURIComponent(buoy.id)}&range=${range}&metric=${metric}`)
       .then(r => { if (!r.ok) throw new Error(String(r.status)); return r.json() })
       .then((d: TimeseriesResponse) => {
         if (cancelled) return
         if (d.error) throw new Error(d.error)
+        cachePut(TS_CACHE, cacheKey, d)
         setTs(d)
       })
-      .catch(() => { if (!cancelled) { setError('이 지점은 이력이 제공되지 않습니다'); setTs(null) } })
+      .catch(() => {
+        if (cancelled) return
+        // 캐시가 있었으면(=이미 유효한 값이 화면에 떠 있음) 백그라운드 재검증 실패는 조용히
+        // 무시하고 마지막 성공값을 계속 보여준다 — 스피너/에러로 되돌리지 않는다.
+        if (!cached) { setError('이 지점은 이력이 제공되지 않습니다'); setTs(null) }
+      })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
   }, [buoy?.id, buoy?.source, range, metric])
@@ -224,12 +270,19 @@ export default function DetailDrawer() {
 
   // 24h/7d 예측 오버레이 — 30d/1y 에서는 폭 대비 24h 가 무의미해 요청하지 않는다.
   useEffect(() => {
-    setForecast(null)
-    if (!buoy || (range !== '24h' && range !== '7d')) return
+    if (!buoy || (range !== '24h' && range !== '7d')) { setForecast(null); return }
     let cancelled = false
+    // GOAL 2 — 캐시 히트면 즉시 그 값으로 표시(없으면 기존처럼 null 유지, 도착 시 표시).
+    const cacheKey = fcCacheKey(buoy.source, buoy.id, metric)
+    const cached = FC_CACHE.get(cacheKey)
+    setForecast(cached ?? null)
     fetch(`/api/forecast?source=${buoy.source}&id=${encodeURIComponent(buoy.id)}&metric=${metric}`)
       .then(r => r.ok ? r.json() : null)
-      .then((d: ForecastResponse | null) => { if (!cancelled && d && !d.error) setForecast(d) })
+      .then((d: ForecastResponse | null) => {
+        if (cancelled || !d || d.error) return
+        cachePut(FC_CACHE, cacheKey, d)
+        setForecast(d)
+      })
       .catch(() => {})
     return () => { cancelled = true }
   }, [buoy?.id, buoy?.source, metric, range])
