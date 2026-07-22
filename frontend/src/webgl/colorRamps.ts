@@ -73,17 +73,18 @@ export function buildWindTrailLUT(): Uint8Array {
   return lut
 }
 
-// ── SST color ramp: 표층수온(℃) → RGB — 한반도 주변 해역 실측 범위(대략 14~34℃, CLAUDE.md §26)를
-// 커버하는 저채도 시퀀셜 스케일(한랭=청록 → 온난=주황/적색). 다크 UI 위에서 튀지 않도록 채도를
-// windColor 대비 한 단 낮췄다(필드는 "배경"이어야 한다는 §26 원칙).
+// ── SST color ramp: 표층수온(℃) → RGB — 직관적인 0~40℃ 스펙트럼(청=0℃ → 녹=10℃ → 황=20℃ →
+// 주황=30℃ → 적=40℃, 사용자 지시 2026-07-22). 한반도 주변 해역 실측 범위(대략 15~29℃)는 이
+// 스펙트럼의 녹~주황 대역에 놓인다. 다크 UI 위에서 튀지 않도록 채도를 windColor 대비 한 단
+// 낮춘 저채도 톤을 유지한다(필드는 "배경"이어야 한다는 §26 원칙).
 export function sstColor(tempC: number): [number, number, number] {
   const t = Math.min(1, Math.max(0, (tempC - SST_MIN) / (SST_MAX - SST_MIN)))
   const stops: [number, number[]][] = [
-    [0.0, [40, 70, 150]],
-    [0.25, [45, 130, 175]],
-    [0.5, [80, 175, 130]],
-    [0.75, [220, 175, 60]],
-    [1.0, [205, 75, 55]],
+    [0.0, [45, 95, 190]],
+    [0.25, [70, 175, 95]],
+    [0.5, [230, 205, 75]],
+    [0.75, [232, 145, 45]],
+    [1.0, [212, 58, 48]],
   ]
   for (let k = 0; k < stops.length - 1; k++) {
     const [t0, c0] = stops[k], [t1, c1] = stops[k + 1]
@@ -95,8 +96,8 @@ export function sstColor(tempC: number): [number, number, number] {
   return stops[stops.length - 1][1] as [number, number, number]
 }
 
-export const SST_MIN = 14
-export const SST_MAX = 34
+export const SST_MIN = 0
+export const SST_MAX = 40
 
 // ── Web-Mercator latitude helpers (shared JS ↔ GLSL) ─────────────────────────
 // Raw mercator Y (natural-log form, range ±π at ±85°). Used to normalise the

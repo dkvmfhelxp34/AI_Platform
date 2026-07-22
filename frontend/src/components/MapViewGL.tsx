@@ -72,7 +72,7 @@ import WaveSparkline from './WaveSparkline'
 import { detectCaps } from '../webgl/glUtils'
 import { WindGL } from '../webgl/windGL'
 import { SstGL } from '../webgl/sstGL'
-import { windColor, sstColor, WIND_SPEED_MAX, SST_MIN, SST_MAX } from '../webgl/colorRamps'
+import { sstColor, windTrailColor, WIND_SPEED_MAX, SST_MIN, SST_MAX } from '../webgl/colorRamps'
 
 // ── 지도 상수 ──────────────────────────────────────────────────────────────
 const CENTER: [number, number] = [128, 36]
@@ -953,8 +953,11 @@ function FieldToggleBtn({ label, active, disabled, onClick }: {
   )
 }
 
-// ── §26 필드 범례 — 색 그라디언트 바 + 최소/최대 값 + 출처/기준시각(모델·위성 자료임을 명시,
-//    "KST" 문자열은 절대 쓰지 않는다 — 시각값(valid_kst)은 이미 "YYYY-MM-DD HH:MM" 그대로 표기) ──
+// ── §26 필드 범례 — 수온장: 색 그라디언트 바 + 최소/최대 값. 바람장: 지도 위 실제 파티클 표현을
+//    그대로 반영해 색 스케일이 아니라 "트레일 길이/움직임" 인디케이터로 표현(사용자 지시
+//    2026-07-22 — windColor 색 그라디언트는 실제 화면과 불일치해 오해를 유발했다). 둘 다 출처/
+//    기준시각(모델·위성 자료임을 명시, "KST" 문자열은 절대 쓰지 않는다 — 시각값(valid_kst)은 이미
+//    "YYYY-MM-DD HH:MM" 그대로 표기)은 동일 양식으로 하단에 2줄 고정한다 ──
 function fieldGradientCss(colorFn: (v: number) => [number, number, number], min: number, max: number): string {
   const stops = [0, 0.25, 0.5, 0.75, 1].map(t => {
     const [r, g, b] = colorFn(min + t * (max - min))
@@ -963,19 +966,62 @@ function fieldGradientCss(colorFn: (v: number) => [number, number, number], min:
   return `linear-gradient(90deg, ${stops.join(', ')})`
 }
 
+// ── 바람장 범례 — 지도 위 실제 파티클 트레일 색(windTrailColor, 흰색쪽에 강하게 mix 된 "거의 흰색"
+//    톤)을 그대로 샘플링해, 좌(느림·짧음·성김) → 우(빠름·김·촘촘)로 흐르는 "정지된 파티클 필드"
+//    스트로크로 그린다. 색이 아니라 길이/밀도/움직임이 속도를 전달한다는 §26 실제 렌더링과 일치.
+//    y 지터는 인덱스 기반 결정론(렌더 간 안정) — Math.random 미사용.
+const WIND_LEGEND_VB_W = 200
+const WIND_LEGEND_VB_H = 22
+const WIND_LEGEND_N = 13
+
+function WindLegendStreaks() {
+  return (
+    <svg width="100%" height={WIND_LEGEND_VB_H} viewBox={`0 0 ${WIND_LEGEND_VB_W} ${WIND_LEGEND_VB_H}`}
+      preserveAspectRatio="none" style={{ display: 'block' }}>
+      {Array.from({ length: WIND_LEGEND_N }).map((_, i) => {
+        const frac = (i + 0.5) / WIND_LEGEND_N            // 0..1, 좌→우
+        const x = 10 + frac * (WIND_LEGEND_VB_W - 20)     // 좌우 여백 인셋
+        const spd = frac * WIND_SPEED_MAX                 // 느림→빠름
+        const len = 4 + frac * 18                         // 길수록 빠름
+        const y = 4 + ((i * 5) % 15)                      // 결정론적 세로 지터
+        const op = 0.5 + frac * 0.45                      // 빠를수록 진하게
+        const [r, g, b] = windTrailColor(spd)
+        return (
+          <line key={i} x1={x - len / 2} x2={x + len / 2} y1={y} y2={y}
+            stroke={`rgb(${Math.round(r)},${Math.round(g)},${Math.round(b)})`}
+            strokeWidth={1.4} strokeLinecap="round" strokeOpacity={op} vectorEffect="non-scaling-stroke" />
+        )
+      })}
+    </svg>
+  )
+}
+
 function FieldLegendRow({ kind, field }: { kind: 'wind' | 'sst'; field: FieldWind | FieldSst }) {
   const isWind = kind === 'wind'
-  const gradient = isWind ? fieldGradientCss(windColor, 0, WIND_SPEED_MAX) : fieldGradientCss(sstColor, SST_MIN, SST_MAX)
   const unit = isWind ? ' m/s' : '℃'
-  const lo = isWind ? '0' : `${SST_MIN}`
-  const hi = isWind ? `${WIND_SPEED_MAX}+` : `${SST_MAX}+`
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
       <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--t-hi)' }}>{isWind ? '바람장' : '수온장'}</span>
-      <div style={{ height: 7, borderRadius: 4, background: gradient, border: '1px solid var(--line)' }} />
+      {isWind ? <WindLegendStreaks /> : (
+        <div style={{
+          height: 7, borderRadius: 4,
+          background: fieldGradientCss(sstColor, SST_MIN, SST_MAX),
+          border: '1px solid var(--line)',
+        }} />
+      )}
       <div className="tnum" style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--t-lo)' }}>
-        <span>{lo}{unit}</span>
-        <span>{hi}{unit}</span>
+        {isWind ? (
+          <>
+            <span>느림</span>
+            <span>빠름 · {WIND_SPEED_MAX}+{unit}</span>
+          </>
+        ) : (
+          // 0/10/20/30/40 — 10℃ 단위 눈금(SST_MIN~SST_MAX 균등, 그라디언트 바 위치와 일치).
+          // 단위(℃)는 마지막 눈금에만 한 번 표기(사용자 지시 2026-07-22).
+          [0, 10, 20, 30, 40].map((t, i, a) => (
+            <span key={t}>{t}{i === a.length - 1 ? unit : ''}</span>
+          ))
+        )}
       </div>
       {/* 출처/기준시각 2줄 고정 — 윗줄: 제공자·해상도·기준일(…{MM/DD}), 둘째줄: 모델시각(마지막
           토큰 {HH}z+{F}h)부터 · 기준시각. 바람장·수온장 동일 양식(사용자 지시 2026-07-21). */}
