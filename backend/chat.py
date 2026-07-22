@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import math
 import os
 import re
 import shutil
@@ -439,6 +440,151 @@ def _sea_region(lon, lat) -> Optional[str]:
     return "동해"
 
 
+# ── 해역 이름 → 근사 bbox(get_area_conditions 전용, §해역 상황 종합) ─────────────────────────
+# `_sea_region()`(위, 4개 대분류 — query_buoys 의 해역 필터가 사용)과는 별개 계통이다. 여기는
+# "대한해협"·"제주해협" 같은 세부 해역명까지 지원해야 해서 좌표 bbox 를 이름별로 직접 정의한다.
+# 전부 근사치(공식 해역 경계 데이터 없음) — 도구 결과에 항상 "근사" 라벨을 함께 반환한다.
+_NAMED_AREAS: dict[str, dict] = {
+    "서해": {"lon": (124.0, 126.5), "lat": (33.0, 38.6), "label": "서해(황해)"},
+    "서해북부": {"lon": (124.0, 126.5), "lat": (36.8, 38.6), "label": "서해북부"},
+    "서해중부": {"lon": (124.0, 126.5), "lat": (35.0, 36.8), "label": "서해중부"},
+    "서해남부": {"lon": (124.0, 126.5), "lat": (33.0, 35.0), "label": "서해남부"},
+    "남해": {"lon": (126.5, 129.5), "lat": (33.2, 35.3), "label": "남해"},
+    "남해서부": {"lon": (126.5, 127.8), "lat": (33.2, 35.3), "label": "남해서부"},
+    "남해동부": {"lon": (127.8, 129.5), "lat": (33.2, 35.3), "label": "남해동부"},
+    "동해": {"lon": (129.0, 132.5), "lat": (35.3, 38.6), "label": "동해"},
+    "동해남부": {"lon": (129.0, 132.5), "lat": (35.3, 37.0), "label": "동해남부"},
+    "동해중부": {"lon": (129.0, 132.5), "lat": (37.0, 38.0), "label": "동해중부"},
+    "동해북부": {"lon": (129.0, 132.5), "lat": (38.0, 38.6), "label": "동해북부"},
+    "제주": {"lon": (125.5, 127.3), "lat": (32.8, 34.0), "label": "제주 근해"},
+    "제주해협": {"lon": (126.0, 127.3), "lat": (33.9, 34.6), "label": "제주해협"},
+    "대한해협": {"lon": (128.2, 130.6), "lat": (33.9, 35.4), "label": "대한해협(부산~쓰시마 사이)"},
+    "울릉도독도근해": {"lon": (130.4, 132.2), "lat": (36.7, 38.1), "label": "울릉도·독도 근해"},
+}
+
+# 아명/변형 표기 → 위 딕셔너리 정규 키(정규화 후 매칭 — 아래 `_norm_area_key` 참고).
+_AREA_ALIASES: dict[str, str] = {
+    "황해": "서해", "서해상": "서해", "서해바다": "서해",
+    "동해상": "동해", "동해바다": "동해",
+    "남해상": "남해", "남해바다": "남해",
+    "제주도": "제주", "제주근해": "제주", "제주바다": "제주", "제주도근해": "제주",
+    "대한해협부근": "대한해협", "쓰시마해협": "대한해협", "부산쓰시마해협": "대한해협",
+    "울릉도": "울릉도독도근해", "독도": "울릉도독도근해", "울릉도독도": "울릉도독도근해",
+    "울릉도독도해역": "울릉도독도근해",
+}
+
+
+def _norm_area_key(s: str) -> str:
+    """해역명 비교용 정규화 — 공백/가운뎃점/쉼표를 제거해 표기 차이(대한해협 vs 대한 해협,
+    울릉도·독도 근해 vs 울릉도독도근해)를 흡수한다. `_NAMED_AREAS`/`_AREA_ALIASES` 의 키는 이미
+    이 정규화된 형태(공백 없음)로 작성돼 있으므로, 입력을 정규화한 뒤 그대로 dict 조회하면 된다."""
+    return re.sub(r"[\s·・,]+", "", (s or "").strip())
+
+
+def _supported_area_labels() -> list[str]:
+    return sorted({v["label"] for v in _NAMED_AREAS.values()})
+
+
+def _haversine_km(lon1: float, lat1: float, lon2: float, lat2: float) -> float:
+    r = 6371.0
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dphi = math.radians(lat2 - lat1)
+    dlambda = math.radians(lon2 - lon1)
+    a = math.sin(dphi / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dlambda / 2) ** 2
+    return 2 * r * math.asin(math.sqrt(a))
+
+
+def _resolve_area(args: dict) -> dict:
+    """해역 인자를 해석해 필터링 가능한 형태로 반환(get_area_conditions 전용).
+
+    입력은 {"area": "<이름>"} | {"bbox": {"lon_min","lon_max","lat_min","lat_max"}} |
+    {"near": "<부이명/id>", "radius_km": N} 중 하나. 성공 시
+    {"ok": True, "kind": "bbox"|"radius", ..., "label": "<이름> (근사 범위)"} 를 반환하고,
+    실패 시(알 수 없는 해역명·부이 없음·인자 누락) 크래시 대신 안내 payload({"ok": False, ...})를
+    반환한다 — 지원 해역명 목록을 항상 함께 실어 모델이 사용자에게 되물을 수 있게 한다."""
+    area_name = args.get("area")
+    bbox = args.get("bbox")
+    near = args.get("near")
+
+    if area_name:
+        norm = _norm_area_key(str(area_name))
+        canon = _AREA_ALIASES.get(norm, norm)
+        info = _NAMED_AREAS.get(canon)
+        if not info:
+            return {
+                "ok": False,
+                "error": f"'{area_name}'은(는) 알 수 없는 해역명입니다.",
+                "지원_해역_목록": _supported_area_labels(),
+            }
+        return {
+            "ok": True, "kind": "bbox",
+            "lon_range": info["lon"], "lat_range": info["lat"],
+            "label": f"{info['label']} (근사 범위)",
+        }
+
+    if bbox:
+        try:
+            lon_min = float(bbox.get("lon_min"))
+            lon_max = float(bbox.get("lon_max"))
+            lat_min = float(bbox.get("lat_min"))
+            lat_max = float(bbox.get("lat_max"))
+        except (TypeError, ValueError, AttributeError):
+            return {"ok": False, "error": "bbox 에는 lon_min/lon_max/lat_min/lat_max 숫자가 모두 필요합니다."}
+        return {
+            "ok": True, "kind": "bbox",
+            "lon_range": (lon_min, lon_max), "lat_range": (lat_min, lat_max),
+            "label": f"좌표범위(lon {lon_min}~{lon_max}, lat {lat_min}~{lat_max}) (근사 범위)",
+        }
+
+    if near:
+        try:
+            radius_km = float(args.get("radius_km") or 50)
+        except (TypeError, ValueError):
+            radius_km = 50.0
+        matches = _resolve_buoy(str(near))
+        if not matches:
+            return {"ok": False, "error": f"'{near}'에 해당하는 부이를 찾을 수 없어 반경 기준점을 정할 수 없습니다."}
+        if len(matches) > 1:
+            return {
+                "ok": False,
+                "error": f"'{near}'에 해당하는 부이가 여러 개입니다 — 후보를 사용자에게 되물어보세요.",
+                "candidates": [s.get("name") for s in matches[:10]],
+            }
+        base = matches[0]
+        lon, lat = base.get("lon"), base.get("lat")
+        if lon is None or lat is None:
+            return {"ok": False, "error": f"'{base.get('name')}' 부이의 좌표 정보가 없습니다."}
+        return {
+            "ok": True, "kind": "radius",
+            "center": (float(lon), float(lat)), "radius_km": radius_km,
+            "label": f"{base.get('name')} 반경 {radius_km:.0f}km (근사 범위)",
+        }
+
+    return {
+        "ok": False,
+        "error": "area, bbox, near 중 하나를 지정해야 합니다.",
+        "지원_해역_목록": _supported_area_labels(),
+    }
+
+
+def _area_contains(resolved: dict, lon, lat) -> bool:
+    if lon is None or lat is None:
+        return False
+    try:
+        lon = float(lon)
+        lat = float(lat)
+    except (TypeError, ValueError):
+        return False
+    if resolved.get("kind") == "bbox":
+        lo_min, lo_max = resolved["lon_range"]
+        la_min, la_max = resolved["lat_range"]
+        return lo_min <= lon <= lo_max and la_min <= lat <= la_max
+    if resolved.get("kind") == "radius":
+        clon, clat = resolved["center"]
+        return _haversine_km(clon, clat, lon, lat) <= resolved["radius_km"]
+    return False
+
+
 def _candidates_payload(matches: list[dict], query: str) -> dict:
     return {
         "ambiguous": True,
@@ -673,6 +819,143 @@ def tool_get_status_overview(args: dict) -> dict:
     }
 
 
+# ── 도구 7: get_area_conditions (해역 상황 종합) ──────────────────────────
+# "대한해협 상황은 어때?" 류 지역/상황 질문에 답하기 위해, 해역 bbox 안의 부이들을 모아
+# 현재 라이브 스냅샷(외부 호출 없음, build_live_snapshot() 인메모리 재계산)에서 파고/풍속/수온을
+# 집계한다. 예측(get_forecast, 모의)과는 별개 — 여기는 항상 "현재" 관측 집계만 다룬다.
+_GALE_WATCH_WAVE_M = 3.0     # 풍랑주의보 유의파고 기준
+_GALE_WARN_WAVE_M = 5.0      # 풍랑경보 유의파고 기준
+_STRONG_WATCH_WIND_MS = 14.0  # 강풍주의보 풍속 기준
+_STRONG_WARN_WIND_MS = 21.0   # 강풍경보 풍속 기준
+_AREA_SAMPLE_CAP = 12
+
+
+def tool_get_area_conditions(args: dict) -> dict:
+    resolved = _resolve_area(args or {})
+    if not resolved.get("ok"):
+        return resolved
+
+    stations = stations_mod.get_stations()
+    live_items = live_snapshot.build_live_snapshot()
+    live_by_id = {it["id"]: it for it in live_items}
+
+    in_area: list[tuple[dict, Optional[dict]]] = [
+        (s, live_by_id.get(s.get("id")))
+        for s in stations
+        if _area_contains(resolved, s.get("lon"), s.get("lat"))
+    ]
+
+    if not in_area:
+        return {
+            "해역": resolved["label"],
+            "부이수": 0,
+            "안내": "이 해역 범위에 등록된 부이가 없습니다(해역 범위는 좌표 기반 근사입니다).",
+        }
+
+    status_counts = {"정상": 0, "지연": 0, "미수신": 0}
+    wave_pts: list[tuple[float, str]] = []
+    wind_pts: list[tuple[float, str]] = []
+    temp_vals: list[float] = []
+    freshness: list[float] = []
+    wave_watch: list[str] = []
+    wave_warn: list[str] = []
+    wind_watch: list[str] = []
+    wind_warn: list[str] = []
+    sample_rows: list[dict] = []
+
+    for s, it in in_area:
+        name = s.get("name")
+        if it is None:
+            status_counts["미수신"] = status_counts.get("미수신", 0) + 1
+            sample_rows.append({"name": name, "파고_m": None, "풍속_ms": None, "수온_C": None, "상태": "정보없음"})
+            continue
+
+        st = it.get("status", "미수신")
+        status_counts[st] = status_counts.get(st, 0) + 1
+        v = it.get("values") or {}
+        wh, ws, wt = v.get("wave_height"), v.get("wind_speed"), v.get("water_temp")
+
+        if wh is not None:
+            wave_pts.append((wh, name))
+            if wh >= _GALE_WATCH_WAVE_M:
+                wave_watch.append(name)
+            if wh >= _GALE_WARN_WAVE_M:
+                wave_warn.append(name)
+        if ws is not None:
+            wind_pts.append((ws, name))
+            if ws >= _STRONG_WATCH_WIND_MS:
+                wind_watch.append(name)
+            if ws >= _STRONG_WARN_WIND_MS:
+                wind_warn.append(name)
+        if wt is not None:
+            temp_vals.append(wt)
+        if it.get("minutes_since") is not None:
+            freshness.append(it["minutes_since"])
+
+        sample_rows.append({
+            "name": name,
+            "파고_m": round(wh, 2) if wh is not None else None,
+            "풍속_ms": round(ws, 1) if ws is not None else None,
+            "수온_C": round(wt, 2) if wt is not None else None,
+            "상태": st,
+        })
+
+    파고_agg = None
+    if wave_pts:
+        vals = [v for v, _ in wave_pts]
+        max_v, max_name = max(wave_pts, key=lambda r: r[0])
+        파고_agg = {
+            "평균": round(sum(vals) / len(vals), 2),
+            "최대": {"값": round(max_v, 2), "지점": max_name},
+            "최소": round(min(vals), 2),
+            "관측지점수": len(vals),
+        }
+
+    풍속_agg = None
+    if wind_pts:
+        vals = [v for v, _ in wind_pts]
+        max_v, max_name = max(wind_pts, key=lambda r: r[0])
+        풍속_agg = {
+            "평균": round(sum(vals) / len(vals), 1),
+            "최대": {"값": round(max_v, 1), "지점": max_name},
+        }
+
+    수온_agg = None
+    if temp_vals:
+        수온_agg = {
+            "평균": round(sum(temp_vals) / len(temp_vals), 2),
+            "최저": round(min(temp_vals), 2),
+            "최고": round(max(temp_vals), 2),
+        }
+
+    # 가장 특기할 부이(파고 높은 순)가 앞에 오도록 정렬 — None(결측)은 뒤로.
+    sample_rows.sort(
+        key=lambda r: (r["파고_m"] is not None, r["파고_m"] if r["파고_m"] is not None else -1),
+        reverse=True,
+    )
+
+    return {
+        "해역": resolved["label"],
+        "부이수": len(in_area),
+        "상태분포": status_counts,
+        "파고_m": 파고_agg,
+        "풍속_ms": 풍속_agg,
+        "수온_C": 수온_agg,
+        "특보_임계_초과": {
+            "풍랑주의보_파고3m이상": wave_watch,
+            "풍랑경보_파고5m이상": wave_warn,
+            "강풍주의보_풍속14ms이상": wind_watch,
+            "강풍경보_풍속21ms이상": wind_warn,
+        },
+        "관측_신선도": {
+            "최신_분전": round(min(freshness), 1) if freshness else None,
+            "최고령_분전": round(max(freshness), 1) if freshness else None,
+        },
+        "표본_부이": sample_rows[:_AREA_SAMPLE_CAP],
+        "안내": "해역 범위는 좌표 기반 근사입니다.",
+    }
+
+
 TOOLS = {
     "query_buoys": tool_query_buoys,
     "get_buoy_now": tool_get_buoy_now,
@@ -680,6 +963,7 @@ TOOLS = {
     "get_qc_summary": tool_get_qc_summary,
     "get_forecast": tool_get_forecast,
     "get_status_overview": tool_get_status_overview,
+    "get_area_conditions": tool_get_area_conditions,
 }
 
 # 모델이 쓸 법한 변형명 → 정규 도구명(관대한 매칭 — 존재하지 않는 도구명 호출로 턴이 낭비되는 것 방지)
@@ -692,6 +976,11 @@ TOOL_ALIASES = {
     "get_now": "get_buoy_now",
     "get_timeseries": "get_timeseries_summary",
     "get_qc": "get_qc_summary",
+    "area_conditions": "get_area_conditions",
+    "get_region": "get_area_conditions",
+    "region_summary": "get_area_conditions",
+    "get_sea_area": "get_area_conditions",
+    "sea_area_conditions": "get_area_conditions",
 }
 
 TOOL_STATUS_MSG = {
@@ -701,6 +990,7 @@ TOOL_STATUS_MSG = {
     "get_qc_summary": "QC 이상감지 조회 중...",
     "get_forecast": "모의 예측 생성 중...",
     "get_status_overview": "전체 현황 집계 중...",
+    "get_area_conditions": "해역 상황 종합 중...",
 }
 
 
@@ -917,18 +1207,36 @@ SYSTEM_PROMPT = """당신은 국내 해양 부이 통합 모니터링 플랫폼(
 ```tool_call
 {"tool": "도구명", "args": {...}}
 ```
-- **query_buoys**: {"기관": "KMA|KHOA", "종류": "...", "상태": "정상|지연|미수신", "해역": "동해|서해|남해|제주"} (전부 선택사항, 조합 가능) → 조건에 맞는 부이 목록(이름·기관·상태·좌표). 해역은 좌표 기반 근사치입니다.
+- **query_buoys**: {"기관": "KMA|KHOA", "종류": "...", "상태": "정상|지연|미수신", "해역": "동해|서해|남해|제주"} (전부 선택사항, 조합 가능) → 조건에 맞는 부이 목록(이름·기관·상태·좌표). 해역은 이 4개 대분류만 지원하는 좌표 기반 근사치입니다 — "대한해협"·"제주해협"·"동해남부" 같은 세부 해역명은 이 필터가 아니라 아래 get_area_conditions 의 area 인자를 쓰세요.
 - **get_buoy_now**: {"name_or_id": "덕적도"} → 그 부이의 현재 파고·풍속·수온·기압·상태·관측시각.
 - **get_timeseries_summary**: {"name_or_id": "...", "metric": "wave|water_temp|wind_speed|pressure", "range": "24h|7d|30d|1y"} → 그 기간 현재/평균/최대/최소 + 구간내 변화(추세).
 - **get_qc_summary**: {"name_or_id": "..."} → 관측기관 QC(AQC/MQC) + AI 이상감지(스파이크/결측) 최근 플래그 요약.
 - **get_forecast**: {"name_or_id": "...", "metric": "wave|water_temp|wind_speed|pressure"} → 24h 모의 예측 요약(반드시 "모의/시연"임을 답변에 명시).
-- **get_status_overview**: {} → 전체 정상/지연/미수신 집계, 활성 경보 수, 최대 파고 지점.
+- **get_status_overview**: {} → 전국 전체 정상/지연/미수신 집계, 활성 경보 수, 최대 파고 지점.
+- **get_area_conditions**: {"area": "해역명"} 또는 {"bbox": {"lon_min":.., "lon_max":.., "lat_min":.., "lat_max":..}} 또는
+  {"near": "부이이름", "radius_km": N} → 그 해역 안의 부이들을 모아 파고/풍속/수온의 평균·최대(지점 포함)·최소,
+  상태분포(정상/지연/미수신), 풍랑·강풍 주의보/경보 임계 초과 지점, 관측 신선도, 표본 부이 목록을 한 번에
+  집계해 반환합니다(전부 실측 라이브 스냅샷 기반, 예측 아님). area 로 지원하는 해역명: 서해(황해)·서해북부·
+  서해중부·서해남부·남해·남해서부·남해동부·동해·동해남부·동해중부·동해북부·제주(근해)·제주해협·대한해협·
+  울릉도·독도 근해. 해역 경계는 전부 좌표 기반 근사이며, 알 수 없는 해역명이면 도구가 지원 목록을 함께
+  돌려주니 그 목록으로 사용자에게 되물으세요.
 
 ## 부이 이름 처리
 - 사용자가 부이명을 부분적으로/부정확하게 말해도 위 도구들이 부분일치로 찾아 줍니다.
 - 도구 결과에 candidates(여러 후보)가 있으면 임의로 하나를 골라 답하지 말고, 후보 이름들을 나열해
   사용자에게 되묻습니다.
 - 도구 결과가 error(부이 없음)이면 다른 부이 이름을 지어내 대신 답하지 않습니다.
+
+## 해역·전반 상황 질문 처리
+- "대한해협 상황은 어때?", "동해 쪽 어때", "전반적으로 어때", "어디가 파고 높아" 처럼 특정 부이 하나가
+  아니라 지역/전체 상황을 묻는 질문에는, 해역이 특정되면 get_area_conditions 를, 전국 전반이면
+  get_status_overview 를 호출해 실제 집계를 받은 뒤 답합니다.
+- 숫자를 그대로 나열하지 말고 상황을 종합(synthesize)해서 설명하세요: 특기할 사실(최대 파고 지점·값,
+  특보 임계 근접/초과 여부, 상태 이상 유무)을 짚고, 위 도메인 상식의 특보 기준과 비교해 판단을 더한 뒤,
+  마지막에 "그래서 현재 ~한 상황입니다" 한 줄 요약으로 마무리합니다.
+- 도구가 반환하지 않은 수치는 절대 언급하지 않습니다(환각 금지 원칙과 동일). 해역에 부이가 없다는
+  결과(부이수 0)가 오면 그대로 정직하게 안내합니다.
+- 항목이 3개 이상이면 위 표 규칙을 따르되, 표만 던지지 말고 표 앞뒤에 짧은 해석 문장을 반드시 붙입니다.
 
 ## 표기·문체
 - 시간은 "YYYY-MM-DD HH:MM" 형식(KST). 수치는 관측 단위 그대로(파고 m·풍속 m/s·수온 ℃·기압 hPa).
