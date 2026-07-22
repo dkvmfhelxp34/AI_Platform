@@ -42,8 +42,8 @@ import {
 // 드로어·카드에서 유지하고, 데이터 표면만 밝게 뒤집는다. 시리즈색은 흰 배경 대비를 위해 한 단 진하게 재보정.
 const ACCENT_HEX = '#2E7DB4'    // 관측 — 마린 블루 실선(흰 플롯 대비 위해 --accent #4E9AC9 보다 한 단 진하게)
 const FORECAST_HEX = '#C98A1E'  // 예측(점선) — 앰버, 관측(블루)·상태색과 구분되는 난색(흰 배경 대비 진하게)
-const QC_INST_HEX = '#D24E86'   // 관측기관 QC 플래그(로즈) — 흰 플롯 위 대비 확보를 위해 진하게
-const QC_AI_HEX = '#FF3B30'     // 알고리즘(AI) 이상감지(선명한 빨강) — 흰 플롯 위에서도 강하게 튐(경보색과 계열)
+const QC_INST_HEX = '#8E44AD'   // 관측기관 QC(AQC/MQC) — 퍼플. AI QC(레드)와 색상각 명확히 분리, 흰 플롯 위 대비 확보
+const QC_AI_HEX = '#E5372C'     // AI QC(robust z-score 이상치) — 선명한 레드. 관측기관 QC(퍼플)와 확실히 구분
 const GRID_HEX = '#E6EBF0'      // 그리드라인 — 흰 플롯면 위 옅은 회색 수평/수직 격자
 const LINE_HEX = '#D4DBE3'      // 축선 — 흰 배경 위 옅은 회색
 const TLO_HEX = '#8794A2'       // X축 2단 눈금 아랫줄(날짜) — 중간 회색
@@ -157,7 +157,7 @@ function fmtVal(v: number | null | undefined, decimals: number): string {
 }
 
 function exportCsv(buoy: MergedBuoy, range: TimeseriesRange, points: TimeseriesPoint[]) {
-  const header = ['시각(KST)', '파고_m', '파주기_s', '풍속_ms', '풍향_deg', '수온_C', '기온_C', '기압_hPa', '기관QC', 'AI이상감지']
+  const header = ['시각(KST)', '파고_m', '파주기_s', '풍속_ms', '풍향_deg', '수온_C', '기온_C', '기압_hPa', '관측기관QC', 'AI_QC']
   const rows = points.map(p => [
     p.t, p.wave, p.wave_period, p.wind_speed, p.wind_dir, p.water_temp, p.air_temp, p.pressure,
     p.qc?.flagged ? '1' : '0', p.ai_qc?.spike ? '1' : '0',
@@ -767,7 +767,7 @@ function TimeseriesSection({ buoy, range, setRange, metric, setMetric, ts, loadi
                 범례(NDBC/Grafana 참고). '예측(모의 24h)' 고지 문구는 범례 라벨 안에 유지(신뢰 표기). */}
             <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 10 }}>
               <div style={{ fontSize: 14.5, fontWeight: 700, color: 'var(--t-hi)', letterSpacing: '-0.005em' }}>
-                {buoy.name} <span style={{ color: 'var(--t-lo)', fontWeight: 500 }}>·</span> {metricCfg.label} <span style={{ color: 'var(--t-mid)', fontWeight: 600 }}>({metricCfg.unit})</span>
+                {buoy.name} <span style={{ color: 'var(--t-lo)', fontWeight: 500 }}>·</span> {metricCfg.label}
               </div>
               <div style={{ display: 'flex', gap: 14, alignItems: 'center' }}>
                 <LegendChip color={ACCENT_HEX} label="관측" />
@@ -778,19 +778,10 @@ function TimeseriesSection({ buoy, range, setRange, metric, setMetric, ts, loadi
             {/* 플롯 면 — §20: 카드(--bg-elev)보다 밝은 --bg-float(팝업·툴팁과 동일 최고 엘리베이션)로
                 "떠 있는" 분석 표면을 준다. 그리드·데이터 잉크가 이 면 위에서 대비를 갖는다. */}
             <div style={{ background: PLOT_BG_HEX, borderRadius: 8, padding: '20px 6px 2px', position: 'relative' }}>
-            {/* 단위 태그 — Y축이 무엇을 나타내는지 플롯 좌상단에서 즉시 확인 가능(제목의 단위 표기와
-                이중 확인). 플롯면보다 확실히 어둡게 대비를 줘 또렷이 읽힌다.
-                §26 — 이 배지(top:12, 실측 높이 ≈26px)가 차지하는 세로 영역이 <ComposedChart margin.top>
-                이 예약해 두는 여백(과거 22px, 패딩 20px 포함해도 42px)보다 실제로 더 커서, Y축 맨 위
-                눈금("5"/"1008" 등)과 3~4px 겹쳤다(실측). margin.top 을 32 로 늘려 배지 하단과 첫 눈금
-                사이에 항상 ~6px 여유를 둔다(4개 지표 전부 배지 높이가 동일해 이 여유는 지표 무관). */}
-            <div className="tnum" style={{
-              position: 'absolute', top: 12, left: 16, zIndex: 2, fontSize: 13, fontWeight: 700,
-              color: '#5A6675', background: '#F2F5F9', border: '1px solid #E1E7EE',
-              borderRadius: 5, padding: '2px 7px', pointerEvents: 'none',
-            }}>{metricCfg.unit}</div>
-            <ResponsiveContainer width="100%" height={264}>
-              <ComposedChart data={chartData} margin={{ top: 32, right: 10, left: 2, bottom: 2 }}>
+            {/* §27(2026-07-22) — 단위는 Y축 회전 축제목(아래 <YAxis label>)에만 표기해 논문풍으로
+                정돈한다. 기존 좌상단 단위 배지(칩)는 제거(계기 UI 칩보다 축제목이 깔끔). */}
+            <ResponsiveContainer width="100%" height={280}>
+              <ComposedChart data={chartData} margin={{ top: 12, right: 14, left: 6, bottom: 2 }}>
                 <defs>
                   <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
                     <stop offset="0%" stopColor={ACCENT_HEX} stopOpacity={0.32} />
@@ -811,9 +802,14 @@ function TimeseriesSection({ buoy, range, setRange, metric, setMetric, ts, loadi
                     지정한 domain 을 Math.min/Math.max 로 합집합(parseSpecifiedDomain) 해버려 축이
                     0 까지 눌린다 — allowDataOverflow 로 우리 domain([yMin,yMax], 이미 실측 범위를
                     포함하도록 계산됨)을 그대로 신뢰하게 한다. */}
+                {/* §27 — Y축 폭에 축제목(회전) 공간 +26px 를 더해 눈금 숫자와 겹치지 않게 분리한다
+                    (QHD 100% 실측에서 insideLeft 라벨이 기본 폭으론 눈금과 겹쳤다). 라벨은 축 박스
+                    좌단(insideLeft), 눈금은 우단(플롯 쪽)이라 폭을 벌리면 사이가 벌어진다. */}
                 <YAxis tick={{ fontSize: 13, fill: AXIS_HEX, fontFamily: 'var(--font-ui)' }}
-                  axisLine={false} tickLine={false} width={yAxisWidth} domain={[yMin, yMax]}
+                  axisLine={false} tickLine={false} width={yAxisWidth + 26} domain={[yMin, yMax]}
                   ticks={ticks} tickFormatter={v => formatYTick(v, tickStep, DECIMALS[metric])}
+                  label={{ value: `${metricCfg.label} (${metricCfg.unit})`, angle: -90, position: 'insideLeft', offset: 6,
+                    style: { textAnchor: 'middle', fill: AXIS_HEX, fontSize: 12, fontWeight: 600, fontFamily: 'var(--font-ui)' } }}
                   allowDataOverflow />
                 <Tooltip content={<ChartTooltip unit={metricCfg.unit} metricLabel={metricCfg.label} decimals={DECIMALS[metric]} />}
                   cursor={{ stroke: CROSSHAIR_HEX, strokeWidth: 1, strokeDasharray: '3 3' }} />
@@ -905,7 +901,7 @@ function TimeseriesSection({ buoy, range, setRange, metric, setMetric, ts, loadi
           </span>
           <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
             <span style={{ width: 8, height: 8, borderRadius: '50%', background: QC_AI_HEX, flexShrink: 0 }} />
-            AI 이상감지{ts?.qc_summary.ai_spike_count != null ? ` · ${ts.qc_summary.ai_spike_count}건` : ''}
+            AI QC{ts?.qc_summary.ai_spike_count != null ? ` · ${ts.qc_summary.ai_spike_count}건` : ''}
           </span>
         </div>
       )}
@@ -963,7 +959,7 @@ function ChartTooltip({ active, payload, label, unit, metricLabel, decimals }: {
         </div>
       )}
       {row.qcFlag && <div style={{ fontSize: 13, color: QC_INST_HEX, marginTop: 4, fontWeight: 600 }}>● 관측기관 QC 플래그</div>}
-      {row.aiSpike && <div style={{ fontSize: 13, color: QC_AI_HEX, marginTop: 2, fontWeight: 600 }}>◆ AI 이상감지(스파이크)</div>}
+      {row.aiSpike && <div style={{ fontSize: 13, color: QC_AI_HEX, marginTop: 2, fontWeight: 600 }}>◆ AI QC(스파이크)</div>}
     </div>
   )
 }
