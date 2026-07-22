@@ -30,8 +30,12 @@
  *             베이스 양쪽에서 동일하게 읽힌다(§17, §16 라이트 기본의 "어두운 글씨"는 위성 위에서 안
  *             읽혀 폐기). 마커 좌표·앵커·declutter 좌표계산 자체는 미변경(가시성/후보 조건·rank만).
  * - Popup:    Wave 3b — 드로어와 구분되는 "가벼운 티저" 카드로 재설계. React createRoot 마운트.
- *             글리프/한글명/영문명/(기관명)/상태칩/관측시각(KST, 경과) + 핵심값 3종(파고·풍속+방위·
- *             수온, 임계값 색) + 최근 24h 파고 미니 스파크라인(가벼운 자체 fetch) + 큼직한 "상세" CTA.
+ *             §28(2026-07-22) 재정리 — 헤더는 상태점+한글명 / 영문명·기관 서브타이틀 / 상태칩(우상단)
+ *             으로 압축(카테고리 글리프는 지도 마커 모양이 이미 전달하므로 팝업에서 생략) + 관측시각
+ *             (KST, 경과) + 핵심값(파고·풍속·수온, 임계값 색)을 드로어 "현재 관측" 카드와 같은 톤
+ *             (--bg-elev/--edge-hi)의 **균등폭 3열 그리드**로 표시(방위는 라벨이 아니라 풍속값 아래
+ *             회전 화살표+나침반 이름으로 분리해 셀 폭이 들쭉날쭉해지지 않게 함) + 최근 1일 파고
+ *             미니 스파크라인(카드화 대신 얇은 상단 구분선만 남긴 가벼운 풋터, 가벼운 자체 fetch).
  * - Legend:   항상 표시하는 작은 고정 패널 — 글리프·색 스와치가 스스로 설명되도록 설명 문구·형태명
  *             텍스트("원형/삼각형/..")·카운트를 모두 빼고 라벨만 남긴다(잔텍스트 최소화). SE 연안
  *             부이를 가리지 않도록 좌하단에 배치.
@@ -53,7 +57,7 @@
  *             'styledata' 이벤트마다 reattach() 로 부모를 재확인한다(멱등). `/api/field` 는 현재
  *             1프레임만 서빙하므로(타임라인 없음) 5분 간격으로만 재폴링한다.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
@@ -268,52 +272,81 @@ function buildMarkerInnerHTML(b: MergedBuoy, selected: boolean, baseLayer: BaseL
 }
 
 // ── 팝업 내용 (React) — Wave 3b "가벼운 티저" 재설계 ──────────────────────
-function ValueCell({ label, value, unit, color }: { label: string; value: string; unit?: string; color?: string }) {
+// §28(2026-07-22) — 드로어 "현재 관측" 카드(DetailDrawer.tsx CurrentReadout)와 같은 시각 톤
+// (--bg-elev + --line 보더 + --edge-hi 엘리베이션)으로 맞춰 팝업/드로어가 한 시스템처럼 보이게 한다.
+// 이전엔 각 셀이 라벨 텍스트 길이만큼 폭을 차지해(특히 "풍속 · 남서 244°" 라벨) 셀 폭이 들쭉날쭉
+// 했다 — 방위 표기를 라벨에서 빼 값 아래 작은 sub 줄(회전 화살표+나침반 이름)로 옮기고, 렌더되는
+// 셀 개수만큼 균등폭 그리드(repeat(N,1fr))를 잡아 항상 가지런하게 한다.
+function ValueCell({ label, value, unit, color, sub }: {
+  label: string; value: string; unit?: string; color?: string; sub?: ReactNode
+}) {
   return (
-    // §26 — flex: 1 1 auto + minWidth: max-content 로 컨텐츠 폭 아래로는 절대 눌리지 않는다(3열이
-    // 들어와도 "풍속 · 남서 225°" 같은 긴 라벨이 줄바꿈되는 대신, 부모(팝업)가 옆으로 넓어진다).
-    <div style={{ background: 'var(--bg-panel)', border: '1px solid var(--line)', borderRadius: 7, padding: '8px 9px',
-      flex: '1 1 auto', minWidth: 'max-content' }}>
-      <div className="eyebrow" style={{ marginBottom: 4, fontSize: 13, whiteSpace: 'nowrap' }}>{label}</div>
-      <div className="tnum" style={{ fontSize: 18, fontWeight: 700, color: color ?? 'var(--t-hi)', whiteSpace: 'nowrap' }}>
-        {value}{unit && <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--t-lo)', marginLeft: 2 }}>{unit}</span>}
+    <div style={{ background: 'var(--bg-elev)', border: '1px solid var(--line)', borderRadius: 8,
+      padding: '9px 8px', boxShadow: 'var(--edge-hi)', minWidth: 0 }}>
+      <div className="eyebrow" style={{ marginBottom: 4, fontSize: 12, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+        {label}
       </div>
+      <div className="tnum" style={{ fontSize: 17, fontWeight: 700, color: color ?? 'var(--t-hi)', whiteSpace: 'nowrap' }}>
+        {value}{unit && <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--t-lo)', marginLeft: 2 }}>{unit}</span>}
+      </div>
+      {sub && <div style={{ marginTop: 3 }}>{sub}</div>}
     </div>
+  )
+}
+
+// 풍향 화살표 — 나침반처럼 0°(=북=위쪽)를 기준으로 회전. degToCompass() 와 같은 각도값을 그대로
+// 재사용해 화살표와 나침반 이름이 항상 같은 방향을 가리킨다("244°" 같은 원시 각도수치는 라벨에
+// 노출하지 않는다 — §28 지시사항).
+function WindDirGlyph({ deg }: { deg: number }) {
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 12, color: 'var(--t-lo)', fontWeight: 500, whiteSpace: 'nowrap' }}>
+      <span aria-hidden style={{ display: 'inline-block', transform: `rotate(${deg}deg)`, color: 'var(--t-mid)', fontSize: 10, lineHeight: 1 }}>▲</span>
+      {degToCompass(deg)}
+    </span>
   )
 }
 
 function BuoyPopupContent({ b }: { b: MergedBuoy }) {
   const hex = STATUS_HEX[b.status]
-  const category = categoryOf(b)
   const v = b.values
-  const cells: { label: string; value: string; unit?: string; color?: string }[] = []
+  const cells: { label: string; value: string; unit?: string; color?: string; sub?: ReactNode }[] = []
   if (v.wave_height != null) {
     cells.push({ label: '파고', value: v.wave_height.toFixed(1), unit: 'm', color: THRESHOLD_HEX[waveLevel(v.wave_height)] })
   }
   if (v.wind_speed != null) {
-    cells.push({ label: `풍속 · ${degToCompass(v.wind_dir)}${v.wind_dir != null ? ` ${Math.round(v.wind_dir)}°` : ''}`, value: v.wind_speed.toFixed(1), unit: 'm/s' })
+    cells.push({
+      label: '풍속', value: v.wind_speed.toFixed(1), unit: 'm/s',
+      sub: v.wind_dir != null ? <WindDirGlyph deg={v.wind_dir} /> : undefined,
+    })
   }
   if (v.water_temp != null) cells.push({ label: '수온', value: v.water_temp.toFixed(1), unit: '℃' })
+
+  // 서브타이틀 — "영문명 · 기관명"(둘 다 있을 때만 가운뎃점). 카테고리 글리프는 지도 마커 모양이
+  // 이미 전달하므로 팝업 헤더에서는 생략하고 상태점만 남긴다(§28).
+  const subtitle = [b.name_en, SOURCE_LABEL[b.source]].filter(Boolean).join(' · ')
 
   return (
     // §25 — uiz 는 이 내부 콘텐츠 wrapper 에만 건다(popupEl 자체가 아니라) — MapLibre 는 팝업을
     // 감싸는 .maplibregl-popup-content 의 실측 크기로 앵커를 계산하는데, 이 div 가 zoom 으로
     // 커지면 그 실측 크기에 자연히 반영되어 앵커 계산이 어긋나지 않는다.
-    <div className="uiz" style={{ padding: '16px 18px 18px', fontFamily: 'var(--font-ui)', color: 'var(--t-mid)', fontSize: 13.5,
+    <div className="uiz" style={{ padding: '13px 15px 14px', fontFamily: 'var(--font-ui)', color: 'var(--t-mid)', fontSize: 13.5,
       width: 'max-content', minWidth: 272, maxWidth: 420 }}>
-      {/* 헤더 — 글리프 + 한글명(대) + 영문 + (기관명) + 상태칩 */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8, paddingRight: 18, marginBottom: 10 }}>
-        <div style={{ minWidth: 0, display: 'flex', alignItems: 'flex-start', gap: 9 }}>
-          <div style={{ marginTop: 2, background: 'var(--bg-panel)', border: '1px solid var(--line)', borderRadius: 7, padding: 5, flexShrink: 0 }}>
-            <BuoyGlyph category={category} fill={hex} size={17} />
+      {/* 헤더 — 상태점 + 한글명(대) / 서브타이틀(영문·기관, --t-lo) · 상태칩은 우상단, × 닫힘버튼은
+          CSS 절대배치(index.css .buoy-ml-popup .maplibregl-popup-close-button)라 paddingRight 로
+          자리만 비워둔다. */}
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8, paddingRight: 18, marginBottom: 9 }}>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: hex, flexShrink: 0 }} />
+            <span style={{ fontWeight: 700, fontSize: 17, color: 'var(--t-hi)', lineHeight: 1.25, letterSpacing: '-0.01em' }}>
+              {b.name}
+            </span>
           </div>
-          <div style={{ minWidth: 0 }}>
-            <div style={{ fontWeight: 700, fontSize: 18, color: 'var(--t-hi)', lineHeight: 1.26, letterSpacing: '-0.01em' }}>{b.name}</div>
-            <div style={{ fontSize: 13, color: 'var(--t-lo)', marginTop: 2, display: 'flex', gap: 5, flexWrap: 'wrap' }}>
-              {b.name_en && <span>{b.name_en}</span>}
-              <span style={{ fontWeight: 600 }}>({SOURCE_LABEL[b.source]})</span>
+          {subtitle && (
+            <div style={{ fontSize: 12.5, color: 'var(--t-lo)', marginTop: 3, marginLeft: 15, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {subtitle}
             </div>
-          </div>
+          )}
         </div>
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 13, fontWeight: 700, color: hex,
           background: STATUS_SOFT[b.status], border: `1px solid ${STATUS_BORDER[b.status]}`,
@@ -323,20 +356,19 @@ function BuoyPopupContent({ b }: { b: MergedBuoy }) {
         </span>
       </div>
 
-      {/* 관측시각(KST, 경과) — 종류 태그는 제거(§12, 글리프가 모양으로 이미 전달) */}
-      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6, padding: '8px 0', marginBottom: 10,
+      {/* 관측시각(KST, 경과) */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6, padding: '7px 0', marginBottom: 9,
         borderTop: '1px solid var(--line)', borderBottom: '1px solid var(--line)' }}>
         <span className="tnum" style={{ color: 'var(--t-lo)', fontSize: 13, fontWeight: 500, textAlign: 'right' }}>
           {b.obs_time ? <>{b.obs_time} · {relativeFromMinutes(b.minutes_since)}</> : '관측 이력 없음'}
         </span>
       </div>
 
-      {/* 핵심값 2~3종(임계값 색) — 스파크라인이 뒤따르면 여백 확보, 스파크라인이 없으면(마지막
-          콘텐츠) 컨테이너 하단 패딩에만 기대 여백을 중복시키지 않는다. */}
+      {/* 핵심값 2~3종(임계값 색) — 드로어 "현재 관측" 카드와 같은 톤의 균등폭 그리드(§28, 위
+          ValueCell 주석 참고). 스파크라인이 뒤따르면 여백 확보, 없으면(마지막 콘텐츠) 컨테이너
+          하단 패딩에만 기대 여백을 중복시키지 않는다. */}
       {cells.length > 0 ? (
-        // §26 — 고정 1/3 그리드(gridTemplateColumns: 1fr×N) 대신 flex 행: 각 셀은 자기 컨텐츠
-        // 폭만큼만 차지하고(minWidth: max-content, 위 ValueCell), 남는 여백만 균등 배분한다.
-        <div style={{ display: 'flex', gap: 6, marginBottom: b.hasLive ? 10 : 0 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: `repeat(${cells.length}, 1fr)`, gap: 7, marginBottom: b.hasLive ? 10 : 0 }}>
           {cells.map(c => <ValueCell key={c.label} {...c} />)}
         </div>
       ) : (
@@ -345,12 +377,12 @@ function BuoyPopupContent({ b }: { b: MergedBuoy }) {
         </div>
       )}
 
-      {/* 최근 24h 파고 미니 스파크라인 — 팝업의 마지막 콘텐츠(상세 CTA 제거 후 "작은 현황" 카드로
-          축소, ui_revision_notes 신규 클릭 모델: 드로어가 항상 자동으로 열리므로 CTA 는 불필요해졌다).
-          하단 여백은 컨테이너 padding(18px)에 맡긴다. */}
+      {/* 최근 1일 파고 미니 스파크라인 — 팝업의 마지막 콘텐츠. §28: 배경+보더 카드를 걷어내고 위
+          관측시각 줄과 같은 얇은 상단 구분선만 남긴 가벼운 풋터로 낮춘다(무거운 박스 카드가 두 겹
+          쌓이던 문제 해소). 하단 여백은 컨테이너 padding 에 맡긴다. */}
       {b.hasLive && (
-        <div style={{ background: 'var(--bg-panel)', border: '1px solid var(--line)', borderRadius: 7, padding: '7px 9px 5px' }}>
-          <div className="eyebrow" style={{ marginBottom: 3, fontSize: 13 }}>최근 1일 파고 추이</div>
+        <div style={{ paddingTop: 8, borderTop: '1px solid var(--line)' }}>
+          <div className="eyebrow" style={{ marginBottom: 4, fontSize: 12 }}>최근 1일 파고 추이</div>
           <WaveSparkline source={b.source} id={b.id} />
         </div>
       )}
